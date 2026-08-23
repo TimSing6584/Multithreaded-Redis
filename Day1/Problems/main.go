@@ -9,10 +9,13 @@ import (
 func main(){
 	counter := threadsafecounter.Counter{}
 	var wg sync.WaitGroup
-	wg.Add(100000)
 	for i := 0; i < 100000; i ++ {
-		go counter.Increment(&wg)
+		wg.Add(1)
+		go func(){
+			defer wg.Done()
+			counter.Increment()
+		}()
 	}
 	wg.Wait()
-	fmt.Println("Final value: ", counter.GetValue())
+	fmt.Println("Final value:", counter.GetValue())
 }

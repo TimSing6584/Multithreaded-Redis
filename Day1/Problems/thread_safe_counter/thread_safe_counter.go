@@ -9,9 +9,8 @@ type Counter struct{
 	mu sync.Mutex
 }
 
-func (c *Counter) Increment(wg *sync.WaitGroup){
+func (c *Counter) Increment(){
 	defer c.mu.Unlock()
-	defer wg.Done()
 	c.mu.Lock()
 	c.v ++
 }
