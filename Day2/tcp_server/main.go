@@ -12,15 +12,17 @@ import (
 func handleConnection(c net.Conn){
 	// Once handling done -> Close
 	defer c.Close()
-	buffer := make([]byte, 1024)
-	_, err := c.Read(buffer) // blocks until the client sends data
-	if err != nil {
-		fmt.Println("Error reading from connection:", err)
-		return
-	}
+	for {
+		buffer := make([]byte, 1024)
+		_, err := c.Read(buffer) // blocks until the client sends data
+		if err != nil {
+			fmt.Println("Error reading from connection:", err)
+			break
+		}
 
-	fmt.Println(string(buffer))
-	c.Write([]byte("Hello from low-level TCP server!\n"))
+		fmt.Println(string(buffer))
+		c.Write([]byte("Hello from low-level TCP server!\n"))
+	}
 
 }
 
