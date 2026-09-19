@@ -1,7 +1,7 @@
 package main
 
 import (
-	"Redis-k02/Day1/thread_safe_counter"
+	"Redis-k02/Part1/thread_safe_counter"
 	"fmt"
 	"sync"
 )

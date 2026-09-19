@@ -23,3 +23,5 @@
     - Read data from the connection, process command and response
 
 
+# 2. RESP (Redis Serialization Protocol):
+
