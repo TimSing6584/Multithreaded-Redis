@@ -37,6 +37,11 @@ func handleReadable(connFd int) {
 	for {
 		args, err := protocol.ReadCommand(reader)
 		if err != nil {
+			// EOF / unexpected EOF just mean the buffer ran out (possibly
+			// mid-command); anything else is a malformed request.
+			if err != io.EOF && err != io.ErrUnexpectedEOF {
+				_, _ = syscall.Write(connFd, []byte("-ERR Protocol error: "+err.Error()+"\r\n"))
+			}
 			return
 		}
 		if len(args) == 0 {
@@ -52,12 +57,12 @@ func handleReadable(connFd int) {
 }
 
 func main() {
-	listener, err := net.Listen("tcp", ":3000")
+	listener, err := net.Listen("tcp", ":4000")
 	if err != nil {
 		fmt.Println("listen error:", err)
 		return
 	}
-	fmt.Println("Server started on port 3000")
+	fmt.Println("Server started on port 4000")
 
 	tcpListener := listener.(*net.TCPListener)
 	// Retrieve the underlying file descriptor for the listener

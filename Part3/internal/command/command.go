@@ -5,11 +5,24 @@
 package command
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 
 	"Redis-k02/Part3/internal/protocol"
 )
+
+func encodeSimpleString(s string) []byte {
+	return []byte("+" + s + "\r\n")
+}
+
+func encodeError(s string) []byte {
+	return []byte("-" + s + "\r\n")
+}
+
+func encodeBulkString(s string) []byte {
+	return []byte(fmt.Sprintf("$%d\r\n%s\r\n", len(s), s))
+}
 
 var store = struct {
 	sync.Mutex
@@ -22,18 +35,18 @@ func Handle(args []string) []byte {
 	}
 	switch strings.ToUpper(args[0]) {
 	case "PING":
-		return protocol.EncodeSimpleString("PONG")
+		return encodeSimpleString("PONG")
 	case "SET":
 		if len(args) < 3 {
-			return protocol.EncodeError("ERR wrong number of arguments for 'SET'")
+			return encodeError("ERR wrong number of arguments for 'SET'")
 		}
 		store.Lock()
 		store.data[args[1]] = args[2]
 		store.Unlock()
-		return protocol.EncodeSimpleString("OK")
+		return encodeSimpleString("OK")
 	case "GET":
 		if len(args) < 2 {
-			return protocol.EncodeError("ERR wrong number of arguments for 'GET'")
+			return encodeError("ERR wrong number of arguments for 'GET'")
 		}
 		store.Lock()
 		v, ok := store.data[args[1]]
@@ -41,8 +54,8 @@ func Handle(args []string) []byte {
 		if !ok {
 			return protocol.NilReply
 		}
-		return protocol.EncodeBulkString(v)
+		return encodeBulkString(v)
 	default:
-		return protocol.EncodeError("ERR unknown command")
+		return encodeError("ERR unknown command")
 	}
 }
