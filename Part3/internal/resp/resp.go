@@ -1,4 +1,4 @@
-package protocol
+package resp
 
 import (
 	"bufio"
@@ -10,50 +10,50 @@ import (
 
 var NilReply = []byte("$-1\r\n")
 
-// Value represents any RESP type
 type Value struct {
-	Type   byte    // '+', '-', ':', '$', '*'
-	Str    string  // simple string / error
-	Num    int     // integer
-	Bulk   string  // bulk string
-	Array  []Value // array
-	IsNull bool    // null bulk string / null array
+	Type   byte
+	Str    string
+	Num    int
+	Bulk   string
+	Array  []Value
+	IsNull bool
 }
 
-// ----Entry point (server calls this)----
+// The final responsibility of this file is to parse the resp request into a slice of arguments.
+// The command package will then handle the arguments and return a response.
 
-// ReadCommand reads one RESP command off r and returns it as a flat []string
-// of args.
+// ----Entry point----
+
+func isRESPType(b byte) bool {
+	return b == '*' || b == '+' || b == '-' || b == ':' || b == '$'
+}
+
 func ReadCommand(r *bufio.Reader) ([]string, error) {
-	// Peek, don't read: Decode reads the type byte itself, and for '$' it
-	// must also consume the payload after the length line.
-	b, err := r.Peek(1)
+	b, err := r.ReadByte()
 	if err != nil {
 		return nil, err
 	}
 
-	switch b[0] {
-	case '*', '+', '-', ':', '$':
-		v, err := Decode(r)
+	// Inline command (e.g. "PING\r\n" typed into nc/telnet)
+	// Useful for testing using netcat or telnet, but not part of the RESP spec.
+	if !isRESPType(b) {
+		rest, err := readLine(r)
 		if err != nil {
 			return nil, err
 		}
-		return extractArgs(v), nil
+		return strings.Fields(string(b) + rest), nil
 	}
 
-	// Inline command, e.g. "SET foo bar\r\n" typed into nc/telnet.
-	line, err := readLine(r)
+	_ = r.UnreadByte()
+	v, err := Decode(r)
 	if err != nil {
 		return nil, err
 	}
-	return strings.Fields(line), nil
+	return extractArgs(v), nil
 }
 
+// ----RESP decoder----
 
-// ----RESP decoder/parser----
-
-// Decode reads one complete RESP value off r.
-// Used recursively by decodeArray for nested elements.
 func Decode(r *bufio.Reader) (Value, error) {
 	b, err := r.ReadByte()
 	if err != nil {
@@ -69,11 +69,7 @@ func Decode(r *bufio.Reader) (Value, error) {
 	case '$':
 		return decodeBulkString(r)
 	case '*':
-		line, err := readLine(r)
-		if err != nil {
-			return Value{}, err
-		}
-		return decodeArray(r, "*"+line)
+		return decodeArray(r)
 	default:
 		return Value{}, fmt.Errorf("unknown RESP type: %q", b)
 	}
@@ -126,10 +122,12 @@ func decodeBulkString(r *bufio.Reader) (Value, error) {
 	return Value{Type: '$', Bulk: string(buf[:size])}, nil
 }
 
-// decodeArray takes the already-consumed length line (e.g. "*3"); Decode
-// reads the '*' byte and the rest of that line before calling in here.
-func decodeArray(r *bufio.Reader, line string) (Value, error) {
-	n, err := strconv.Atoi(line[1:]) // strip leading '*'
+func decodeArray(r *bufio.Reader) (Value, error) {
+	line, err := readLine(r)
+	if err != nil {
+		return Value{}, err
+	}
+	n, err := strconv.Atoi(line)
 	if err != nil {
 		return Value{}, fmt.Errorf("invalid array length: %q", line)
 	}
@@ -138,7 +136,7 @@ func decodeArray(r *bufio.Reader, line string) (Value, error) {
 	}
 	arr := make([]Value, n)
 	for i := 0; i < n; i++ {
-		val, err := Decode(r) // recursive
+		val, err := Decode(r)
 		if err != nil {
 			return Value{}, err
 		}
@@ -157,7 +155,6 @@ func readLine(r *bufio.Reader) (string, error) {
 	return strings.TrimRight(line, "\r\n"), nil
 }
 
-// extractArgs flattens a decoded Value into a []string for command handling.
 func extractArgs(v Value) []string {
 	switch v.Type {
 	case '*':
@@ -168,7 +165,6 @@ func extractArgs(v Value) []string {
 				args[i] = elem.Bulk
 			case '+', '-':
 				args[i] = elem.Str
-
 			case ':':
 				args[i] = strconv.Itoa(elem.Num)
 			}

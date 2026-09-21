@@ -13,7 +13,7 @@ import (
 	"syscall"
 
 	"Redis-k02/Part3/internal/command"
-	"Redis-k02/Part3/internal/protocol"
+	"Redis-k02/Part3/internal/resp"
 	"Redis-k02/Part3/io_multiplexing"
 )
 
@@ -35,7 +35,7 @@ func handleReadable(connFd int) {
 
 	reader := bufio.NewReader(bytes.NewReader(buf[:n]))
 	for {
-		args, err := protocol.ReadCommand(reader)
+		args, err := resp.ReadCommand(reader)
 		if err != nil {
 			// EOF / unexpected EOF just mean the buffer ran out (possibly
 			// mid-command); anything else is a malformed request.

@@ -1,15 +1,12 @@
-// Package command holds the "CPU work" of the server: the in-memory store
-// and command dispatch. It has no notion of sockets, goroutines, or event
-// loops, so any I/O strategy (thread pool, single-threaded, io-multiplexed)
-// can call Handle the same way.
+// This file is responsible for handling a set of args that is decoded from the RESP protocol. It will return a response in the RESP format.
+// or we can say "Encode the decoded args into a RESP response"
 package command
 
 import (
 	"fmt"
 	"strings"
 	"sync"
-
-	"Redis-k02/Part3/internal/protocol"
+	"Redis-k02/Part3/internal/resp"
 )
 
 func encodeSimpleString(s string) []byte {
@@ -31,7 +28,7 @@ var store = struct {
 
 func Handle(args []string) []byte {
 	if len(args) == 0 {
-		return protocol.NilReply
+		return resp.NilReply
 	}
 	switch strings.ToUpper(args[0]) {
 	case "PING":
@@ -52,7 +49,7 @@ func Handle(args []string) []byte {
 		v, ok := store.data[args[1]]
 		store.Unlock()
 		if !ok {
-			return protocol.NilReply
+			return resp.NilReply
 		}
 		return encodeBulkString(v)
 	default:
