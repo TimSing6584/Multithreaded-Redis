@@ -12,16 +12,17 @@
 
 1. A new client wants to make a TCP connection to server:
     - Epoll notifies server
-    ![alt text](image-1.png)
+    ![alt text](images/image-1.png)
     - Create a new connection
-    ![alt text](image-2.png)
+    ![alt text](images/image-2.png)
     - Let epoll monitor the new connection's fd
-    ![alt text](image-3.png)
+    ![alt text](images/image-3.png)
 2. Existing client sends data to server:
     - Epoll notifies server
-    ![alt text](image-4.png)
+    ![alt text](images/image-4.png)
     - Read data from the connection, process command and response
 
+![alt text](images/image6.png)
 
 # 2. RESP (Redis Serialization Protocol):
 
@@ -67,7 +68,7 @@ Example: `:1000\r\n` (the integer 1000)
 
 Example: `*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n` (an array of 2 elements, "foo" and "bar"), Null value -> `*-1\r\n`
 
-![alt text](image-5.png)
+![alt text](images/image-5.png)
 
 5. **Error**:
 - Starts with `-`
