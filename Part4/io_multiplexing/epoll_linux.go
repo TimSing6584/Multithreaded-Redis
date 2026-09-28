@@ -33,11 +33,11 @@ func (ep *Epoll) Monitor(event Event) error {
 	return syscall.EpollCtl(ep.fd, syscall.EPOLL_CTL_ADD, event.Fd, &epollEvent)
 }
 
-func (ep *Epoll) Wait() ([]Event, error) {
+func (ep *Epoll) Wait(timeoutMs int) ([]Event, error) {
 	var n int
 	var err error
 	for {
-		n, err = syscall.EpollWait(ep.fd, ep.epollEvents, -1)
+		n, err = syscall.EpollWait(ep.fd, ep.epollEvents, timeoutMs)
 		if err == syscall.EINTR {
 			// A signal (e.g. SIGWINCH from a terminal resize) interrupted
 			// the wait before any fd was ready - not a real error, retry.

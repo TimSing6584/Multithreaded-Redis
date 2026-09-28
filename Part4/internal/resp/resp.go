@@ -38,6 +38,7 @@ func EncodeReply(v Value) []byte {
 				buf = append(buf, EncodeReply(elem)...)
 		}
 		return buf
+
 	default:
 		return []byte("-ERR internal: unencodable reply\r\n")
 	}
