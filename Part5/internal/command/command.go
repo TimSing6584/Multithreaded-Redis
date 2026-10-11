@@ -62,7 +62,12 @@ func Handle(cmd resp.Command) []byte {
 		return handleSIsMember(cmd.Args)
 	case "SMEMBERS":
 		return handleSMembers(cmd.Args)
-
+	case "ZADD":
+		return handleZAdd(cmd.Args)
+	case "ZSCORE":
+		return handleZScore(cmd.Args)
+	case "ZRANK":
+		return handleZRank(cmd.Args)
 	default:
 		return resp.EncodeReply(resp.Error("ERR unknown command"))
 	}

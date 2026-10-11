@@ -35,7 +35,7 @@ func EncodeReply(v Value) []byte {
 	case Array:
 		buf := []byte(fmt.Sprintf("*%d\r\n", len(x)))
 		for _, elem := range x {
-				buf = append(buf, EncodeReply(elem)...)
+			buf = append(buf, EncodeReply(elem)...)
 		}
 		return buf
 
@@ -44,10 +44,7 @@ func EncodeReply(v Value) []byte {
 	}
 }
 
-
-
 // --------Helpers--------
-
 
 // IncompleteError: this happens when the client sends a partial command, and we need to wait for more data before we can parse it.
 var IncompleteError = errors.New("protocol error: incomplete command")

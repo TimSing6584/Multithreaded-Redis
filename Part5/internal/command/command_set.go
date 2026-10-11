@@ -1,11 +1,11 @@
 package command
 
 import (
-	"Redis-k02/Part5/internal/resp"
 	"Redis-k02/Part5/internal/datastructure"
+	"Redis-k02/Part5/internal/resp"
 )
 
-func handleSAdd(args []string) []byte{
+func handleSAdd(args []string) []byte {
 	if len(args) < 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'SADD'"))
 	}
@@ -24,7 +24,7 @@ func handleSAdd(args []string) []byte{
 	return resp.EncodeReply(resp.Integer(added))
 }
 
-func handleSRem(args []string) []byte{
+func handleSRem(args []string) []byte {
 	if len(args) < 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'SREM'"))
 	}
@@ -46,8 +46,7 @@ func handleSRem(args []string) []byte{
 	return resp.EncodeReply(resp.Integer(removed))
 }
 
-
-func handleSIsMember(args []string) []byte{
+func handleSIsMember(args []string) []byte {
 	if len(args) != 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'SISMEMBER'"))
 	}
@@ -63,7 +62,7 @@ func handleSIsMember(args []string) []byte{
 	return resp.EncodeReply(resp.Integer(1))
 }
 
-func handleSMembers(args []string) []byte{
+func handleSMembers(args []string) []byte {
 	if len(args) != 1 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'SMEMBERS'"))
 	}
