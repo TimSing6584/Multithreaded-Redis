@@ -64,6 +64,8 @@ func Handle(cmd resp.Command) []byte {
 		return handleSMembers(cmd.Args)
 	case "ZADD":
 		return handleZAdd(cmd.Args)
+	case "ZREM":
+		return handleZRem(cmd.Args)
 	case "ZSCORE":
 		return handleZScore(cmd.Args)
 	case "ZRANK":
