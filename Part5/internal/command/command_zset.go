@@ -42,6 +42,27 @@ func handleZAdd(args []string) []byte {
 	return resp.EncodeReply(resp.Integer(added))
 }
 
+func handleZRem(args []string) []byte {
+	if len(args) < 2 {
+		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'ZREM'"))
+	}
+	key := args[0]
+	obj := datastructure.Get(key)
+	// check if the key already holds a different type of datastructure
+	if err := checkType(obj, datastructure.KindZSet); err != nil {
+		return err
+	}
+	if obj == nil {
+		return resp.EncodeReply(resp.Integer(0))
+	}
+	zset := obj.Value.(*datastructure.ZSet)
+	var removed int64
+	for _, member := range args[1:] {
+		removed += int64(zset.Rem(member))
+	}
+	return resp.EncodeReply(resp.Integer(removed))
+}
+
 func handleZScore(args []string) []byte {
 	if len(args) != 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'ZSCORE'"))

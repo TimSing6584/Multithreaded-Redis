@@ -4,18 +4,23 @@ type bPlusTree struct {
 	root   *bNode
 	degree int // max children per node; a node splits above degree-1 items
 }
+
 // B+ tree node structure:
-// Each node contains a slice of items and a slice of child nodes. 
-// The isLeaf field indicates whether the node is a leaf node or an internal node. 
-// The parent field points to the parent node 
-// The next field is used for leaf nodes to create a linked list of leaves
+// Each node contains a slice of items and a slice of child nodes.
+// The isLeaf field indicates whether the node is a leaf node or an internal node.
+// The parent field points to the parent node.
+// The next field is used for leaf nodes to create a linked list of leaves.
+// For internal nodes, counts[i] is the number of entries in children[i]'s
+// subtree; it is what makes rank queries O(log n).
 type bNode struct {
 	items    []*bItem
 	children []*bNode
+	counts   []int // internal-only, parallel to children
 	isLeaf   bool
 	parent   *bNode
 	next     *bNode // leaf-only
 }
+
 // Each node can have at most degree - 1 items. Each item contains a score and a member.
 type bItem struct {
 	score  float64
@@ -35,10 +40,81 @@ func newBPlusTree(degree int) *bPlusTree {
 	return &bPlusTree{root: &bNode{isLeaf: true}, degree: degree}
 }
 
-// This function finds the index at the leaves level where the new item should be inserted.
-// Then split node if overflow occurs. The caller must ensure that the member is not already present in the tree,
-// as this implementation does not handle duplicates. So call removeMember first
-func (t *bPlusTree) add(score float64, member string) {
+// size returns the number of entries in n's subtree.
+// Entries here mean the number of items at leaf level of that subtree,
+// not the number of items in the node itself.
+func size(n *bNode) int {
+	if n.isLeaf {
+		return len(n.items)
+	}
+	total := 0
+	for _, c := range n.counts {
+		total += c
+	}
+	return total
+}
+
+func childIndex(parent, child *bNode) int {
+	i := 0
+	for parent.children[i] != child {
+		i++
+	}
+	return i
+}
+
+// adjustCounts adds delta to the subtree count of every ancestor of node,
+// walking up through parent pointers.
+func adjustCounts(node *bNode, delta int) {
+	for node.parent != nil {
+		parent := node.parent
+		parent.counts[childIndex(parent, node)] += delta
+		node = parent
+	}
+}
+
+func (t *bPlusTree) rank(score float64, member string) (int64, bool) {
+	var r int64
+	node := t.root
+	for !node.isLeaf {
+		i := 0
+		for i < len(node.items) && !less(score, member, node.items[i]) {
+			r += int64(node.counts[i])
+			i++
+		}
+		node = node.children[i]
+	}
+	for i, it := range node.items {
+		if it.score == score && it.member == member {
+			return r + int64(i), true
+		}
+	}
+	return 0, false
+}
+
+// at returns the entry at 0-based rank k, or nil if k is out of range.
+// At each internal node, skip whole children while k is past them.
+// Used for commands like ZRANGE and ZREVRANGE,...
+func (t *bPlusTree) at(k int64) *bItem {
+	if k < 0 {
+		return nil
+	}
+	node := t.root
+	for !node.isLeaf {
+		i := 0
+		for i < len(node.counts)-1 && k >= int64(node.counts[i]) {
+			k -= int64(node.counts[i])
+			i++
+		}
+		node = node.children[i]
+	}
+	if k >= int64(len(node.items)) {
+		return nil
+	}
+	return node.items[k]
+}
+
+// findLeaf descends from the root to the leaf where (score, member) belongs.
+func (t *bPlusTree) findLeaf(score float64, member string) *bNode {
 	node := t.root
 	for !node.isLeaf {
 		i := 0
@@ -47,7 +123,16 @@ func (t *bPlusTree) add(score float64, member string) {
 		}
 		node = node.children[i]
 	}
-		i := 0
+	return node
+}
+
+// add() inserts (score, member) into the tree, splitting nodes on overflow.
+// It does not check for an existing entry for member: the caller must
+// remove the old (score, member) first if the member is already present.
+func (t *bPlusTree) add(score float64, member string) {
+	node := t.findLeaf(score, member)
+
+	i := 0
 	for i < len(node.items) && !less(score, member, node.items[i]) {
 		i++
 	}
@@ -55,28 +140,32 @@ func (t *bPlusTree) add(score float64, member string) {
 	copy(node.items[i+1:], node.items[i:])
 	node.items[i] = &bItem{score: score, member: member}
 
-	if len(node.items) > t.degree - 1 {
+	// Update ancestor counts before splitting, while the path is intact;
+	// splits then recompute the counts of the nodes they change.
+	adjustCounts(node, +1)
+
+	if len(node.items) > t.degree-1 {
 		t.splitNode(node)
 	}
 }
-// This function moves to the leftmost leaf node and traverses the linked list of leaves to find and remove the specified member.
-// This is simple version as no balancing is done after removal.
-func (t *bPlusTree) removeMember(member string) {
-	node := t.root
-	for !node.isLeaf {
-		node = node.children[0]
-	}
-	for node != nil {
-		for i, it := range node.items {
-			if it.member == member {
-				node.items = append(node.items[:i], node.items[i+1:]...)
-				return
-			}
-		}
-		node = node.next
-	}
-}
 
+// remove() deletes the entry (score, member) from its leaf, if present,
+// and reports whether it was found. No rebalancing is done, meaning that
+// internal nodes are untouched, and leaves may become sparse or empty.
+func (t *bPlusTree) remove(score float64, member string) bool {
+	node := t.findLeaf(score, member)
+
+	for i, it := range node.items {
+		if it.score == score && it.member == member {
+			copy(node.items[i:], node.items[i+1:])
+			node.items[len(node.items)-1] = nil // let the GC free the removed item
+			node.items = node.items[:len(node.items)-1]
+			adjustCounts(node, -1)
+			return true
+		}
+	}
+	return false
+}
 
 func (t *bPlusTree) splitNode(node *bNode) {
 	if node.parent == nil {
@@ -97,9 +186,10 @@ func (t *bPlusTree) splitLeaf(node *bNode) {
 	node.items = node.items[:mid]
 	node.next = sibling
 
-	// The new leaf's first key is promoted as-is (not removed from the
-	// leaf): leaves hold every item, internal nodes just route.
-	t.insertIntoParent(node, sibling, sibling.items[0])
+	// Promote a copy of the new leaf's first item: leaves keep every item,
+	// internal nodes only route, and the two must not share a pointer.
+	first := sibling.items[0]
+	t.insertIntoParent(node, sibling, &bItem{score: first.score, member: first.member})
 }
 
 func (t *bPlusTree) splitInternal(node *bNode) {
@@ -109,8 +199,10 @@ func (t *bPlusTree) splitInternal(node *bNode) {
 	sibling := &bNode{parent: node.parent}
 	sibling.items = append(sibling.items, node.items[mid+1:]...)
 	sibling.children = append(sibling.children, node.children[mid+1:]...)
+	sibling.counts = append(sibling.counts, node.counts[mid+1:]...)
 	node.items = node.items[:mid]
 	node.children = node.children[:mid+1]
+	node.counts = node.counts[:mid+1]
 	for _, child := range sibling.children {
 		child.parent = sibling
 	}
@@ -124,6 +216,7 @@ func (t *bPlusTree) splitRoot() {
 	t.root = newRoot
 	oldRoot.parent = newRoot
 	newRoot.children = append(newRoot.children, oldRoot)
+	newRoot.counts = append(newRoot.counts, size(oldRoot))
 
 	if oldRoot.isLeaf {
 		t.splitLeaf(oldRoot)
@@ -131,6 +224,7 @@ func (t *bPlusTree) splitRoot() {
 		t.splitInternal(oldRoot)
 	}
 }
+
 // insertIntoParent inserts sibling as node's right neighbor in their
 // shared parent, promoting key as the routing item between them, and
 // recursively splits the parent if that overflows it.
@@ -149,9 +243,14 @@ func (t *bPlusTree) insertIntoParent(node, sibling *bNode, key *bItem) {
 	copy(parent.children[idx+2:], parent.children[idx+1:])
 	parent.children[idx+1] = sibling
 
+	// The split divided node's entries between node and sibling, so
+	// recompute both counts. The parent's own total is unchanged.
+	parent.counts = append(parent.counts, 0)
+	copy(parent.counts[idx+2:], parent.counts[idx+1:])
+	parent.counts[idx] = size(node)
+	parent.counts[idx+1] = size(sibling)
+
 	if len(parent.items) > t.degree-1 {
 		t.splitNode(parent)
 	}
 }
-
-
