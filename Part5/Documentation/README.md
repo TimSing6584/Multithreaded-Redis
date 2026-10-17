@@ -32,7 +32,7 @@ A **local train** (level 0) stops at every station. Finding Quảng Trị (km 72
 Now add **fast lines** above it. Each fast line stops at only some of the stations from the line below:
 ![alt text](images/image-1.png)
 
-### Searching: ride the fastest line, step down when you would overshoot
+<h3><u>Searching: ride the fastest line, step down when you would overshoot</u></h3>
 
 To reach Quảng Trị (km 72):
 
@@ -42,7 +42,7 @@ To reach Quảng Trị (km 72):
 
 Four hops instead of eight. Each level up skips more stations, so the search takes O(log n) on average.
 
-### Inserting: which lines stop at the new station?
+<h3><u>Inserting: which lines stop at the new station?</h3></u>
 
 When a new station opens (say at km 62), it is always served by the local line. Then we flip a coin:
 
@@ -85,18 +85,17 @@ A B+ tree is a balanced search tree where each node holds **many keys** instead 
 - **Leaves are linked**, so a range query finds its first entry, then walks sideways along the leaves.
 - Each node has up to `m` children, so the tree height is about `log_m(n)`. With a large `m`, even millions of entries need only a few levels.
 
-
-### Key ideas to keep in mind
+<h3><u>Key ideas to keep in mind</u></h3>
 
 - **Entries are ordered by `(score, member)`, not by score alone.** Many members can share the same score, so the member breaks ties and every entry gets a unique position. To find a member's rank, first look up its score in a separate hash map (`member → score`), then search the tree with the `(score, member)` pair.
 - **Internal nodes only route; leaves hold the data.** Internal nodes contain separator keys that guide a search to the right leaf. Every actual entry lives at the leaf level, so every search ends at a leaf.
 - **The tree grows upward, not downward.** In an ordinary binary search tree, new nodes are attached below existing leaves, so the tree grows at the bottom. In a B+ tree, a full node splits in two and pushes a separator key up to its parent. When the root itself splits, a new root is created above it, and that is the only time the height increases. As a result, all leaves always stay at the same depth.
 
-### How to search in a B+ tree?
+<h3><u>How to search in a B+ tree?</h3></u>
 
 Just follow the routing internal nodes and when reach the leaf level, do a linear search for the key in the linked list. The search is O(logm n) because the tree height is O(logm n), where m is the maximum number of children per node. The linear search at the leaf level is O(m), but m is a constant, so the overall search time is still O(logm n).
 
-### How to insert in a B+ tree?
+<h3><u>How to insert in a B+ tree?</u></h3>
 
 Firstly, we still need to search for the key to find the leaf node where it should go. After finding the index to insert, we have some main cases:
 
@@ -118,7 +117,7 @@ It's almost similar to the overflow case, but we need to split the parent node a
 For example in the above example you add 61 (no overflow), then add 62 (overflow), then add 62 to parent (also overflow), then add 62 to grandparent (also overflow), then add 62 to root (also overflow). Finally, we create a new root and the tree height increases by 1.
 
 
-### How to remove in a B+ tree?
+<h3><u>How to remove in a B+ tree?</u></h3>
 
 Removal uses *lazy deletion*: the entry is deleted from its leaf, with no rebalancing afterwards.
 
@@ -145,7 +144,7 @@ This stays correct because internal nodes only hold routing keys, which remain v
 
 **Future improvements:** free leaves once they become empty, update scores in place when an entry's position doesn't change, or implement full borrow/merge rebalancing.
 
-### How to rank scores in a B+ tree?
+<h3><u>How to rank scores in a B+ tree?</u></h3>
 
 Rank uses the same descent as a normal search: follow the routing keys from the root down to the leaf where `(score, member)` lives. To get the rank along the way, every internal node stores a **count** for each child: the number of entries (stored in the leaves) inside that child's subtree.
 
