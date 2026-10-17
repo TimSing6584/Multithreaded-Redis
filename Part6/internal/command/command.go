@@ -70,6 +70,16 @@ func Handle(cmd resp.Command) []byte {
 		return handleZScore(cmd.Args)
 	case "ZRANK":
 		return handleZRank(cmd.Args)
+	case "CMS.INITBYDIM":
+		return handleCMSInitByDim(cmd.Args)
+	case "CMS.INITBYPROB":
+		return handleCMSInitByProb(cmd.Args)
+	case "CMS.INCRBY":
+		return handleCMSIncrBy(cmd.Args)
+	case "CMS.QUERY":
+		return handleCMSQuery(cmd.Args)
+	case "CMS.INFO":
+		return handleCMSInfo(cmd.Args)
 	default:
 		return resp.EncodeReply(resp.Error("ERR unknown command"))
 	}

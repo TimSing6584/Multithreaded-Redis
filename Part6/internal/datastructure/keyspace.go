@@ -13,6 +13,7 @@ const (
 	KindString
 	KindSet
 	KindZSet
+	KindCMS
 )
 
 // Object is the value stored for a key. Value's concrete type depends on Kind:
