@@ -1,174 +1,120 @@
-# Refactor code:
+# 1. Count-min Sketch
 
-Earlier versions kept a separate map per data structure (one for strings, one for sets, one for sorted sets). That doesn't scale: checking whether a key exists, or what type it holds, meant checking every store in turn, and that cost grows with every new data structure added. The current design uses one keyspace — a single map[string]*Object — where Object carries both a Kind tag and the underlying value. Existence and type checks become one map lookup no matter how many data structure types exist.
+## Problem Statement:
 
-# Simple Set:
+Imagine we are running a service that processes a stream of user search queries. We want to kepe track the frequency of each unique query. Given that:
 
-Very simple. In Go, we don't have Set data structure, so we use hashmap to implement it. The value of the map is a dummy struct{}{} because we don't care about the value, only the key.
+- ~50 milion unique queries are expected per day
+- Each query has average length of 20 characters <-> 20 bytes
 
-**Commands implemented**: SADD, SREM, SISMEMBER, SMEMBERS
+## Hashmap Approach:
 
-# Sorted Set:
+We can simply use a hashmap to store the frequency of each unique query. However let's look at the space details:
 
-A collection of unique strings (members) ordered by a score (float64).
+- Around 40 bytes per entry (20 bytes from the query string + 8 bytes for the counter + overhead)
+- Therefore, 50 * 10^6 * 40 bytes = 2 GB of memory required, which will grow linearly with the number of unique queries.
 
-Real Redis uses skiplist to implement sorted set, but we use B+ tree here.
+## Count-min Sketch Approach:
 
-Why? Let's talk about both
+The hashmap approach can produce 100% correct results but the tradeoff is that it requires a lot of memory.
 
-## 1. Skiplist:
+And here we have Count-min Sketch, which is <u>a probabilistic data structure that can be used to estimate the frequency of events in a stream</u>, which can be not 100% accurate but can be used to save a lot of memory.
 
-- A probabilistic data structure that allows O(log n) search, insertion and deletion within an ordered sequence of elements.
-- Cons: unstable runtime, high memory overhead
 
-To better understand we take the analogy of the railway
+<u><h3></h3></u>
 
-Picture a railway line where each station is a member of the sorted set and its kilometre marker is the score:
+![alt text](how-does-this-9a43c198b7.jpg)
+
+
+<u><h3>Simple Hash Function:</h3></u>
+
+- We start with an array of width *w*, with every cell set to 0. When a query *x* arrives, we compute `hash(x) % w` and increment that cell by 1.
 
 ![alt text](images/image.png)
 
-A **local train** (level 0) stops at every station. Finding Quảng Trị (km 72) by local train means passing through 7 stations first: O(n).
+- To estimate the count of *x*, we compute the same index and read the value in that cell.
 
-Now add **fast lines** above it. Each fast line stops at only some of the stations from the line below:
+- <u>The problem is that *w* is much smaller than the number of unique queries, so many different queries map to the same cell (a *hash collision*). Their counts add up in that cell, and the estimate for *x* can end up higher than its true count.</u>
+
+
+<u><h3>Multiple hash functions</h3></u>
+
+
+To reduce the impact of collisions, we use *d* independent hash functions, each with its own row of width *w*. Together they form a *d × w* matrix of counters.
+
+- *Update*: when *x* arrives, compute `hash_i(x) % w` for each row *i* and increment that cell.
+- *Query*: read the *d* cells for *x* and return the minimum value.
+
 ![alt text](images/image-1.png)
 
-### Searching: ride the fastest line, step down when you would overshoot
+<u>Why the minimum?</u> Each cell holds the true count of *x* plus extra counts from other queries that collided with it. Collisions can only add to a cell, never subtract, so every cell is at least the true count. Since each hash function collides with a different set of queries, the smallest value is the one with the least noise, and therefore the closest to the true count.
 
-To reach Quảng Trị (km 72):
+<u><h3>Error and Probability</h3></u>
 
-1. **L2:** 14 → 50. The next stop is 79, past 72, so get off at 50 and switch down.
-2. **L1:** 50 → 66. The next stop is 79, past 72, so switch down again.
-3. **L0:** 66 → 72. Arrived.
+- Multiple rows reduce collisions but do not remove them. It is still possible for *x* to collide in every row, so Count-min Sketch can still overcount. What it offers instead is a guarantee on *how much* and *how often*, described by two parameters:
 
-Four hops instead of eight. Each level up skips more stations, so the search takes O(log n) on average.
+    1. *Error (ε)*: the maximum allowed overestimation, measured as a fraction of *N*, the total number of items inserted (not as a fraction of *x*'s own count).
 
-### Inserting: which lines stop at the new station?
+  `estimate(x) ≤ true_count(x) + ε × N`
 
-When a new station opens (say at km 62), it is always served by the local line. Then we flip a coin:
+    2. *Probability (δ)*: the probability that the overestimation is larger than *ε × N*. In other words, the estimate stays within the error bound with probability at least *1 − δ*.
 
-- Heads: the fast line above also stops here. Flip again for the next line up.
-- Tails: stop. The station is served by every line so far, and none above.
+- For example, with ε = 1%, δ = 1% and N = 50 million queries: with 99% probability, the estimate for any query is at most 500,000 above its true count.
 
+- Note that the sketch never undercounts, so `true_count(x) ≤ estimate(x)` always holds.
 
+<h3><u>Is CMS always good?</h3></u>
+
+No. Count-min Sketch only works well when an error of up to *ε × N* is acceptable, which depends on how large the true count is compared to that bound.
+
+Using the same example (N = 50 million, ε = 1%), the error bound is 500,000:
+
+- Query *A* has a true count of 5,000,000. Its estimate is at most 5,500,000, which is at most 10% off. This is still useful.
+![alt text](images/image-4.png)
+- Query *B* has a true count of 3,000. Its estimate could be as high as 503,000, which is more than 160 times its true count. This is meaningless.
 ![alt text](images/image-2.png)
 
-![alt text](images/image-3.png)
+In other words, the sketch is accurate for frequent items and unreliable for rare ones. It fits problems that care about the most frequent items (*heavy hitters*), and does not fit problems that need exact counts, such as billing or financial records.
 
-We flip coins to decide which fast lines stop at the new station. For example, HEAD is added to next level, TAIL is not
+Example applications:
 
-L1: HEAD
-![alt text](images/image-4.png)
+- *Network traffic monitoring*: a router tracks the volume of millions of flows using very little memory, so it can quickly detect unusually large flows, such as a DDoS source or a client consuming too much bandwidth.
+- *Trending topics*: a social platform estimates how often each hashtag or search term appears, to identify what is spiking without storing every term exactly.
+- *Cache admission*: the Caffeine caching library (Java) uses a Count-min Sketch in its TinyLFU policy to estimate how often each key is accessed, and only admits a new key if it is more popular than the one it would evict.
 
-L2: HEAD
+<h3><u>How to construct CMS?</h3></u>
 
-![alt text](images/image-5.png)
+There are two ways to construct a Count-min Sketch:
 
-L3: TAIL --> Don't add to L3, stop flipping
+1. *Specify w and d directly.* This works, but choosing good values requires manual tuning, and it is not obvious what accuracy a given *w* and *d* will give.
+2. *Specify the error ε and probability δ.* This is the more common approach: we state the accuracy we need, and *w* and *d* are calculated from it.
 
+```go
+func CalcCMSDim(errRate float64, errProb float64) (uint32, uint32) {
+    w := uint32(math.Ceil(2.0 / errRate))
+    d := uint32(math.Ceil(math.Log10(errProb) / Log10PointFive))
+    return w, d
+}
+```
 
-Why a coin flip instead of carefully choosing fast stops? Because opening a station never forces us to re-plan the other stations. Insertion only touches the lines passing the new stop, with no rebalancing like a balanced tree would need.
+#### Where does w = 2 / ε comes from?
 
+Consider one row. The cell for *x* holds its true count plus noise from other queries that collided with it. The other queries are spread across *w* cells, so on average a cell receives about *N / w* of noise.
 
-**Redis skiplist's structure**:
+The average is not a guarantee, but Markov's inequality gives a bound: the probability that the noise is more than twice the average is at most 1/2.
 
-![alt text](images/image-6.png)
+`P(noise > 2N / w) ≤ 1/2`
 
+We want this threshold to equal the error bound, so we set *2N / w = ε × N*, which gives *w = 2 / ε*.
 
-## 2. B+ Tree:
+#### Where does d = log(δ) / log(1/2) comes from?
 
-A B+ tree is a balanced search tree where each node holds **many keys** instead of one.
+From above, a single row exceeds the error bound with probability at most 1/2. Each row uses an independent hash function, so the rows fail independently. Since we take the minimum, the estimate is only wrong if *every* row fails:
 
-![alt text](images/image-7.png)
+`P(all d rows fail) ≤ (1/2)^d`
 
-- **Internal nodes** store only routing keys and child pointers. They tell the search which branch to follow.
-- **Leaves** store all the actual entries, in sorted order. All leaves sit at the same depth.
-- **Leaves are linked**, so a range query finds its first entry, then walks sideways along the leaves.
-- Each node has up to `m` children, so the tree height is about `log_m(n)`. With a large `m`, even millions of entries need only a few levels.
+We want this to be at most δ:
 
+`(1/2)^d ≤ δ  →  d = log(δ) / log(1/2)`
 
-### Key ideas to keep in mind
-
-- **Entries are ordered by `(score, member)`, not by score alone.** Many members can share the same score, so the member breaks ties and every entry gets a unique position. To find a member's rank, first look up its score in a separate hash map (`member → score`), then search the tree with the `(score, member)` pair.
-- **Internal nodes only route; leaves hold the data.** Internal nodes contain separator keys that guide a search to the right leaf. Every actual entry lives at the leaf level, so every search ends at a leaf.
-- **The tree grows upward, not downward.** In an ordinary binary search tree, new nodes are attached below existing leaves, so the tree grows at the bottom. In a B+ tree, a full node splits in two and pushes a separator key up to its parent. When the root itself splits, a new root is created above it, and that is the only time the height increases. As a result, all leaves always stay at the same depth.
-
-### How to search in a B+ tree?
-
-Just follow the routing internal nodes and when reach the leaf level, do a linear search for the key in the linked list. The search is O(logm n) because the tree height is O(logm n), where m is the maximum number of children per node. The linear search at the leaf level is O(m), but m is a constant, so the overall search time is still O(logm n).
-
-### How to insert in a B+ tree?
-
-Firstly, we still need to search for the key to find the leaf node where it should go. After finding the index to insert, we have some main cases:
-
-1. **No overflow**:
-
-![alt text](images/image-8.png)
-
-![alt text](images/image-9.png)
-
-2. **Overflow**:
-
-![alt text](images/image-10.png)
-
-
-3. **Cascading Overflow**:
-
-It's almost similar to the overflow case, but we need to split the parent node as well. This can happen recursively up to the root.
-
-For example in the above example you add 61 (no overflow), then add 62 (overflow), then add 62 to parent (also overflow), then add 62 to grandparent (also overflow), then add 62 to root (also overflow). Finally, we create a new root and the tree height increases by 1.
-
-
-### How to remove in a B+ tree?
-
-Removal uses *lazy deletion*: the entry is deleted from its leaf, with no rebalancing afterwards.
-
-**How it works**
-
-1. `ZSet` looks up the member's score in its `member → score` hash map, since the tree is ordered by `(score, member)`.
-2. `findLeaf(score, member)` descends from the root to the right leaf, the same way an insert does: O(log n).
-3. The entry is removed from that leaf. No borrowing, no merging, no changes to internal nodes.
-
-A score update is implemented as `remove(oldScore, member)` + `add(newScore, member)`.
-
-This stays correct because internal nodes only hold routing keys, which remain valid boundaries even after their matching entry is deleted. No leaf is ever removed, so the leaf links never break.
-
-**Limitations**
-
-- Emptied leaves are never freed, and the tree never shrinks.
-- The tree can become sparse, using more memory and causing more cache misses.
-- If scores mostly move one way (e.g. leaderboard points that only increase), leaves on one side drain and are never refilled, while the other side keeps splitting.
-
-**Why lazy deletion**
-
-- **Simplicity:** full deletion must borrow from or merge with siblings, which can cascade up to the root.
-- **If we have large degree:** the tree stays short, so sparse leaves add little search cost.
-
-**Future improvements:** free leaves once they become empty, update scores in place when an entry's position doesn't change, or implement full borrow/merge rebalancing.
-
-### How to rank scores in a B+ tree?
-
-Rank uses the same descent as a normal search: follow the routing keys from the root down to the leaf where `(score, member)` lives. To get the rank along the way, every internal node stores a **count** for each child: the number of entries (stored in the leaves) inside that child's subtree.
-
-On the way down, whenever we pass over children to the left of the one we enter, we add their counts to the rank. Every entry in those subtrees is smaller than the target, so we can count them without visiting them. At the leaf, we add the target's index within that leaf.
-
-**Example** (degree 4): find the rank of `90`.
-
-                            root
-                      keys   [ 70 ]
-                      counts [ 7 | 4 ]
-                     /                \
-             P1                                P2
-     keys   [ 30 | 50 ]                keys   [ 90 ]
-     counts [ 2  | 3  | 2 ]            counts [ 2 | 2 ]
-        /       |        \                /       \
-    [10 20] [30 40 45] [50 60]        [70 80]   [90 100]
-
-| Step | Node | What happens | rank |
-|---|---|---|---|
-| 1 | root | `90 ≥ 70`: skip the whole P1 subtree, add its count `7` | 7 |
-| 2 | P2 | `90 ≥ 90`: skip leaf `[70 80]`, add its count `2` | 9 |
-| 3 | leaf `[90 100]` | `90` is at index `0`, add `0` | **9** |
-
-Check: `10 20 30 40 45 50 60 70 80 90 …`, and `90` is at position 9. The search reads two counts instead of walking past nine entries, so rank is O(log n).
-
-**Keeping counts correct:** `add` and `remove` adjust the counts by +1 / −1 on every ancestor of the changed leaf, and a split recomputes the counts of the two nodes it produces.
+This is why `Log10PointFive` (log₁₀ 0.5) appears in the code.
