@@ -1,20 +1,20 @@
 # 1. Count-min Sketch
 
-## Problem Statement:
+## A) Problem Statement:
 
 Imagine we are running a service that processes a stream of user search queries. We want to kepe track the frequency of each unique query. Given that:
 
 - ~50 milion unique queries are expected per day
 - Each query has average length of 20 characters <-> 20 bytes
 
-## Hashmap Approach:
+## B) Hashmap Approach:
 
 We can simply use a hashmap to store the frequency of each unique query. However let's look at the space details:
 
 - Around 40 bytes per entry (20 bytes from the query string + 8 bytes for the counter + overhead)
 - Therefore, 50 * 10^6 * 40 bytes = 2 GB of memory required, which will grow linearly with the number of unique queries.
 
-## Count-min Sketch Approach:
+## C) Count-min Sketch Approach:
 
 The hashmap approach can produce 100% correct results but the tradeoff is that it requires a lot of memory.
 
@@ -23,7 +23,7 @@ And here we have Count-min Sketch, which is <u>a probabilistic data structure th
 
 <u><h3></h3></u>
 
-![alt text](how-does-this-9a43c198b7.jpg)
+![alt text](images/how-does-this-9a43c198b7.jpg)
 
 
 <u><h3>Simple Hash Function:</h3></u>
@@ -38,6 +38,7 @@ And here we have Count-min Sketch, which is <u>a probabilistic data structure th
 
 
 <u><h3>Multiple hash functions</h3></u>
+
 
 
 To reduce the impact of collisions, we use *d* independent hash functions, each with its own row of width *w*. Together they form a *d × w* matrix of counters.
@@ -70,8 +71,11 @@ No. Count-min Sketch only works well when an error of up to *ε × N* is accepta
 Using the same example (N = 50 million, ε = 1%), the error bound is 500,000:
 
 - Query *A* has a true count of 5,000,000. Its estimate is at most 5,500,000, which is at most 10% off. This is still useful.
+
 ![alt text](images/image-4.png)
+
 - Query *B* has a true count of 3,000. Its estimate could be as high as 503,000, which is more than 160 times its true count. This is meaningless.
+
 ![alt text](images/image-2.png)
 
 In other words, the sketch is accurate for frequent items and unreliable for rare ones. It fits problems that care about the most frequent items (*heavy hitters*), and does not fit problems that need exact counts, such as billing or financial records.
@@ -118,3 +122,73 @@ We want this to be at most δ:
 `(1/2)^d ≤ δ  →  d = log(δ) / log(1/2)`
 
 This is why `Log10PointFive` (log₁₀ 0.5) appears in the code.
+
+# 2. Bloom Filter:
+
+## A) Problem Statement:
+
+Imagine you need to store a 1M unique URLs to quickly check if a URL has been seen before. Each URL has an average length of 50 characters <-> 50 bytes.
+
+## B) Hash Set Approach:
+Total size = 1M * (50 bytes + 8 bytes for the pointer + overhead) = ~60 MB
+
+## C) Bloom Filter Approach:
+
+Like Count-min Sketch, a Bloom filter is a *probabilistic data structure*: it saves a lot of memory in exchange for some accuracy.
+
+The difference is the question it answers:
+- Count-min Sketch estimates *how many times* an item has appeared.
+- A Bloom filter only checks *whether* an item has appeared. It stores no counters, only presence.
+
+A Bloom filter is configured with two parameters:
+
+- *Capacity*: the number of items we expect to add to the filter.
+- *Error rate*: the target probability of a *false positive*, meaning the filter says an item is present when it was never added.
+
+![alt text](images/image-5.png)
+
+
+A Bloom filter is a single array of bits, all starting at 0, and uses *k* hash positions per item. Unlike Count-min Sketch, **there is no separate row for each hash**; all positions point into the same array.
+
+- *Add*: compute the item's *k* bit positions and set all of them to 1.
+- *Check*: compute the same *k* positions.
+  - If any of them is 0, the item was *definitely not* added.
+  - If all of them are 1, the item was *possibly* added. Those bits may have been set by other items, which is how false positives happen.
+
+A Bloom filter never gives a false negative: bits are only ever set to 1, never cleared, so an added item will always find its bits set.
+
+<br>
+<br>
+
+![alt text](images/image-6.png)
+
+
+### Sizing:
+
+The array size and number of hash positions are calculated from capacity and error rate (mathematical approved :) ):
+
+- bits = −capacity × ln(errorRate) / (ln 2)²
+- hashes = (bits / capacity) × ln 2
+
+For 1M URLs at a 1% error rate, this gives about 9.6M bits (≈ 1.2 MB) and 7 hash positions, compared with about 60 MB for the hash set.
+
+Since the array size is fixed at creation, the error rate is only guaranteed up to capacity. Adding more items than planned fills the array and quickly increases the false-positive rate.
+
+### Double hashing:
+
+Computing *k* separate hash functions for every item is expensive. Instead, we compute one 128-bit hash, split it into two 64-bit values *h1* and *h2*, and derive all *k* positions from them:
+
+`position_i = (h1 + i × h2) % bits`, for i = 0 … k − 1
+
+This needs only one hash computation per item, regardless of *k*, and in practice gives the same false-positive rate as *k* independent hash functions.
+
+### Bit array:
+
+A list of booleans would work, but each boolean takes 1 byte (8 bits) while only 1 bit carries information, so 7 of every 8 bits are wasted.
+
+Instead, we use a list of `uint8`, where each element holds 8 bits and each bit represents one position:
+
+- bit position *pos* is in byte `pos / 8`
+- inside that byte, it is bit `pos % 8`
+
+This needs `total_bits / 8` bytes instead of `total_bits` bytes, which is 8 times less memory.

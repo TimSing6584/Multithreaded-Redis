@@ -80,6 +80,18 @@ func Handle(cmd resp.Command) []byte {
 		return handleCMSQuery(cmd.Args)
 	case "CMS.INFO":
 		return handleCMSInfo(cmd.Args)
+	case "BF.RESERVE":
+		return handleBFReserve(cmd.Args)
+	case "BF.ADD":
+		return handleBFAdd(cmd.Args)
+	case "BF.MADD":
+		return handleBFMAdd(cmd.Args)
+	case "BF.EXISTS":
+		return handleBFExists(cmd.Args)
+	case "BF.MEXISTS":
+		return handleBFMExists(cmd.Args)
+	case "BF.INFO":
+		return handleBFInfo(cmd.Args)
 	default:
 		return resp.EncodeReply(resp.Error("ERR unknown command"))
 	}
