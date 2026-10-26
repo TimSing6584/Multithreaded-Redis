@@ -1,8 +1,8 @@
 package command
 
 import (
-	"Redis-k02/Part6/internal/datastructure"
-	"Redis-k02/Part6/internal/resp"
+	"Redis-k02/Part7/internal/datastructure"
+	"Redis-k02/Part7/internal/resp"
 	"strconv"
 )
 

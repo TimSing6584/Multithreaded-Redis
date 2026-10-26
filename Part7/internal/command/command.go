@@ -2,8 +2,8 @@
 package command
 
 import (
-	"Redis-k02/Part6/internal/resp"
-	"Redis-k02/Part6/internal/datastructure"
+	"Redis-k02/Part7/internal/datastructure"
+	"Redis-k02/Part7/internal/resp"
 	"strings"
 	"time"
 )
@@ -31,7 +31,6 @@ func pingHandler(args []string) []byte {
 	}
 	return resp.EncodeReply(resp.SimpleString("PONG"))
 }
-
 
 func Handle(cmd resp.Command) []byte {
 	if cmd.Name == "" {

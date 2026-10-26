@@ -1,10 +1,11 @@
 package command
 
 import (
-	"Redis-k02/Part6/internal/datastructure"
-	"Redis-k02/Part6/internal/resp"
+	"Redis-k02/Part7/internal/datastructure"
+	"Redis-k02/Part7/internal/resp"
 	"strconv"
 )
+
 func handleZAdd(args []string) []byte {
 	if len(args) < 3 || len(args)%2 != 1 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'ZADD'"))
