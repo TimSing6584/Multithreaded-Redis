@@ -1,6 +1,7 @@
 package command
 
 import (
+	"Redis-k02/Part7/internal/core"
 	"Redis-k02/Part7/internal/datastructure"
 	"Redis-k02/Part7/internal/resp"
 	"strconv"
@@ -21,17 +22,17 @@ const (
 // error rate and capacity if the key is absent. errReply is non-nil if the
 // key holds a different type.
 func getOrCreateBloom(key string) (bf *datastructure.BloomFilter, errReply []byte) {
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindBloom); err != nil {
+	if err := checkType(obj, core.KindBloom); err != nil {
 		return nil, err
 	}
 	if obj == nil {
-		obj = &datastructure.Object{
-			Kind:  datastructure.KindBloom,
+		obj = &core.Object{
+			Kind:  core.KindBloom,
 			Value: datastructure.NewBloomFilter(bfDefaultCapacity, bfDefaultErrorRate),
 		}
-		datastructure.Set(key, obj)
+		core.Set(key, obj)
 	}
 	return obj.Value.(*datastructure.BloomFilter), nil
 }
@@ -41,9 +42,9 @@ func handleBFReserve(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'BF.RESERVE'"))
 	}
 	key := args[0]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindBloom); err != nil {
+	if err := checkType(obj, core.KindBloom); err != nil {
 		return err
 	}
 	if obj != nil {
@@ -69,7 +70,7 @@ func handleBFReserve(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR filter too large: capacity and error rate need more than 512MB"))
 	}
 	bf := datastructure.NewBloomFilter(capacity, errorRate)
-	datastructure.Set(key, &datastructure.Object{Kind: datastructure.KindBloom, Value: bf})
+	core.Set(key, &core.Object{Kind: core.KindBloom, Value: bf})
 	return resp.EncodeReply(resp.SimpleString("OK"))
 }
 
@@ -104,9 +105,9 @@ func handleBFExists(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'BF.EXISTS'"))
 	}
 	key, item := args[0], args[1]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindBloom); err != nil {
+	if err := checkType(obj, core.KindBloom); err != nil {
 		return err
 	}
 	if obj == nil {
@@ -120,9 +121,9 @@ func handleBFMExists(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'BF.MEXISTS'"))
 	}
 	key := args[0]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindBloom); err != nil {
+	if err := checkType(obj, core.KindBloom); err != nil {
 		return err
 	}
 	// A missing key means nothing was ever added, so every item gets 0.
@@ -142,9 +143,9 @@ func handleBFInfo(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'BF.INFO'"))
 	}
 	key := args[0]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindBloom); err != nil {
+	if err := checkType(obj, core.KindBloom); err != nil {
 		return err
 	}
 	if obj == nil {

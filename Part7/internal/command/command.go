@@ -2,7 +2,7 @@
 package command
 
 import (
-	"Redis-k02/Part7/internal/datastructure"
+	"Redis-k02/Part7/internal/core"
 	"Redis-k02/Part7/internal/resp"
 	"strings"
 	"time"
@@ -12,10 +12,10 @@ import (
 // that already holds a string.
 const wrongTypeErr = "WRONGTYPE Operation against a key holding the wrong kind of value"
 
-// checkType returns a WRONGTYPE reply if obj (from datastructure.Get) is a
+// checkType returns a WRONGTYPE reply if obj (from core.Get) is a
 // different kind, or nil if the caller may proceed (obj is nil, i.e. the key
 // is absent, or already the right kind).
-func checkType(obj *datastructure.Object, want datastructure.Kind) []byte {
+func checkType(obj *core.Object, want core.Kind) []byte {
 	if obj != nil && obj.Kind != want {
 		return resp.EncodeReply(resp.Error(wrongTypeErr))
 	}

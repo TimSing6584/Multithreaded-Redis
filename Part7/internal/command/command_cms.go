@@ -1,6 +1,7 @@
 package command
 
 import (
+	"Redis-k02/Part7/internal/core"
 	"Redis-k02/Part7/internal/datastructure"
 	"Redis-k02/Part7/internal/resp"
 	"strconv"
@@ -17,9 +18,9 @@ func handleCMSInitByDim(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'CMS.INITBYDIM'"))
 	}
 	key := args[0]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindCMS); err != nil {
+	if err := checkType(obj, core.KindCMS); err != nil {
 		return err
 	}
 	if obj != nil {
@@ -34,7 +35,7 @@ func handleCMSInitByDim(args []string) []byte {
 		return resp.EncodeReply(resp.Error("CMS: invalid depth"))
 	}
 	cms := datastructure.NewCMS(uint32(width), uint32(depth))
-	datastructure.Set(key, &datastructure.Object{Kind: datastructure.KindCMS, Value: cms})
+	core.Set(key, &core.Object{Kind: core.KindCMS, Value: cms})
 	return resp.EncodeReply(resp.SimpleString("OK"))
 }
 
@@ -43,9 +44,9 @@ func handleCMSInitByProb(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'CMS.INITBYPROB'"))
 	}
 	key := args[0]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindCMS); err != nil {
+	if err := checkType(obj, core.KindCMS); err != nil {
 		return err
 	}
 	if obj != nil {
@@ -63,7 +64,7 @@ func handleCMSInitByProb(args []string) []byte {
 	}
 	width, depth := datastructure.CalcCMSDim(errRate, errProb)
 	cms := datastructure.NewCMS(width, depth)
-	datastructure.Set(key, &datastructure.Object{Kind: datastructure.KindCMS, Value: cms})
+	core.Set(key, &core.Object{Kind: core.KindCMS, Value: cms})
 	return resp.EncodeReply(resp.SimpleString("OK"))
 }
 
@@ -72,9 +73,9 @@ func handleCMSIncrBy(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'CMS.INCRBY'"))
 	}
 	key := args[0]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindCMS); err != nil {
+	if err := checkType(obj, core.KindCMS); err != nil {
 		return err
 	}
 	// Unlike ZADD, the sketch must be created explicitly with an INITBY* command,
@@ -111,9 +112,9 @@ func handleCMSQuery(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'CMS.QUERY'"))
 	}
 	key := args[0]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindCMS); err != nil {
+	if err := checkType(obj, core.KindCMS); err != nil {
 		return err
 	}
 	if obj == nil {
@@ -132,9 +133,9 @@ func handleCMSInfo(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'CMS.INFO'"))
 	}
 	key := args[0]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindCMS); err != nil {
+	if err := checkType(obj, core.KindCMS); err != nil {
 		return err
 	}
 	if obj == nil {

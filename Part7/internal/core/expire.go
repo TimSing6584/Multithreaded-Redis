@@ -1,7 +1,10 @@
 // This file handles key expiration for every type of value: expires map, active/passive delete mode
-package datastructure
+package core
 
-import "time"
+import (
+	"Redis-k02/Part7/internal/config"
+	"time"
+)
 
 // expires holds the expiration time of every key that has a TTL. A key without a TTL
 // is simply not in this map, which makes active deletion more efficient because we only sample from keys that have a TTL.
@@ -32,12 +35,7 @@ func expireIfNeeded(key string) bool {
 // Active mode to delete expired keys
 // Every a period of time (for example 100ms), sample a fixed small number of keys (for example 20),
 // then check if they are expired, if yes delete them. If the number of deleted keys exceed out threshold (for example 20%)
-// then we repeat the cycle
-
-const (
-	activeExpireSampleSize = 20
-	activeExpireThreshold  = 0.25
-)
+// then we repeat the cycle. The sample size and threshold live in the config package.
 
 func ActiveExpireDelete(budget time.Duration) {
 	start := time.Now()
@@ -49,7 +47,7 @@ func ActiveExpireDelete(budget time.Duration) {
 		// So this loop only scans first 20 keys and obeserve it does not exceed the threshold -> can't actively remove expired ones
 		// We only sample from expires, so keys without TTL are never wasted samples.
 		for key, at := range expires {
-			if sampled >= activeExpireSampleSize {
+			if sampled >= config.ActiveExpireSampleSize {
 				break
 			}
 			if !now.Before(at) {
@@ -58,7 +56,7 @@ func ActiveExpireDelete(budget time.Duration) {
 			}
 			sampled++
 		}
-		if time.Since(start) > budget || sampled == 0 || float64(deleted)/float64(sampled) < activeExpireThreshold {
+		if time.Since(start) > budget || sampled == 0 || float64(deleted)/float64(sampled) < config.ActiveExpireThreshold {
 			return
 		}
 	}

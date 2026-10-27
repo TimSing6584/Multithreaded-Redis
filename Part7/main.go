@@ -6,7 +6,8 @@ package main
 
 import (
 	"Redis-k02/Part7/internal/command"
-	"Redis-k02/Part7/internal/datastructure"
+	"Redis-k02/Part7/internal/config"
+	"Redis-k02/Part7/internal/core"
 	"Redis-k02/Part7/internal/resp"
 	"Redis-k02/Part7/io_multiplexing"
 	"bufio"
@@ -94,12 +95,12 @@ func handleReadable(connFd int) {
 }
 
 func main() {
-	listener, err := net.Listen("tcp", ":4000")
+	listener, err := net.Listen("tcp", config.Port)
 	if err != nil {
 		fmt.Println("listen error:", err)
 		return
 	}
-	fmt.Println("Server started on port 4000")
+	fmt.Println("Server started on port", config.Port)
 
 	tcpListener := listener.(*net.TCPListener)
 	// Retrieve the underlying file descriptor for the listener
@@ -124,20 +125,11 @@ func main() {
 		fmt.Println("failed to monitor server fd:", err)
 		return
 	}
-	// activeExpiredDeleteInterval bounds how long multiplexer.Wait() blocks, so the
-	// loop doesn't sit idle waiting for connection I/O forever - it wakes up
-	// on its own at least this often and gets a chance to run the active
-	// expiry sweep (actively delete expired keys if they were set EX in SET command)
-	const activeExpiredDeleteInterval = 100 * time.Millisecond
-	// activeExpireBudget bounds how long a single active-expire sweep can run,
-	// so a store full of expired keys can't block the event loop for the
-	// whole sweep - see ActiveExpireDelete.
-	const activeExpireBudget = 1 * time.Millisecond
-
+	// The active expiry interval and budget are explained in the config package.
 	lastActiveExpiredDeleteTime := time.Now()
 
 	for {
-		events, err := multiplexer.Wait(int(activeExpiredDeleteInterval / time.Millisecond)) // blocking call, returns when at least one fd is ready
+		events, err := multiplexer.Wait(int(config.ActiveExpireInterval / time.Millisecond)) // blocking call, returns when at least one fd is ready
 		if err != nil {
 			fmt.Println("wait error:", err)
 			continue
@@ -160,15 +152,15 @@ func main() {
 			// Otherwise, for a read-ready event on a client connection, handle the readable data
 			handleReadable(event.Fd)
 		}
-		// We only run the active expired keys deletion when the Epoll waits more than activeExpiredDeleteInterval, since it starts Wait()
+		// We only run the active expired keys deletion when the Epoll waits more than config.ActiveExpireInterval, since it starts Wait()
 		// For example, at t=0, Wait() is called, after 15ms, Epoll signals the server there's data from one connection, and that data is processed in 10ms
 		// so total 25ms from the start, haven't reached 100ms yet, so we don't run the active expired keys deletion.
 
-		// We only run the active expired keys deletion when the Epoll waits more than activeExpiredDeleteInterval, since it starts Wait(),
+		// We only run the active expired keys deletion when the Epoll waits more than config.ActiveExpireInterval, since it starts Wait(),
 		// or we  can say "run the active delete mode when the server is not BUSY"
 
-		if time.Since(lastActiveExpiredDeleteTime) >= activeExpiredDeleteInterval {
-			datastructure.ActiveExpireDelete(activeExpireBudget)
+		if time.Since(lastActiveExpiredDeleteTime) >= config.ActiveExpireInterval {
+			core.ActiveExpireDelete(config.ActiveExpireBudget)
 			lastActiveExpiredDeleteTime = time.Now()
 		}
 	}

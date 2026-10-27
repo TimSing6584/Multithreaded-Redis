@@ -2,7 +2,7 @@
 package command
 
 import (
-	"Redis-k02/Part7/internal/datastructure"
+	"Redis-k02/Part7/internal/core"
 	"Redis-k02/Part7/internal/resp"
 	"strconv"
 	"strings"
@@ -41,9 +41,9 @@ func handleSet(args []string) []byte {
 
 	}
 	// Set overwrites whatever type the key held before and clears its old TTL.
-	datastructure.Set(key, &datastructure.Object{Kind: datastructure.KindString, Value: value})
+	core.Set(key, &core.Object{Kind: core.KindString, Value: value})
 	if !expireAt.IsZero() {
-		datastructure.SetExpire(key, expireAt)
+		core.SetExpire(key, expireAt)
 	}
 	return resp.EncodeReply(resp.SimpleString("OK"))
 }
@@ -53,12 +53,12 @@ func handleGet(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'GET'"))
 	}
 	// Get applies lazy expiry: an expired key comes back as nil.
-	obj := datastructure.Get(args[0])
+	obj := core.Get(args[0])
 	if obj == nil {
 		return resp.NilReply
 	}
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindString); err != nil {
+	if err := checkType(obj, core.KindString); err != nil {
 		return err
 	}
 	return resp.EncodeReply(resp.BulkString(obj.Value.(string)))

@@ -3,7 +3,7 @@
 package command
 
 import (
-	"Redis-k02/Part7/internal/datastructure"
+	"Redis-k02/Part7/internal/core"
 	"Redis-k02/Part7/internal/resp"
 	"math"
 	"strconv"
@@ -17,7 +17,7 @@ func handleDel(args []string) []byte {
 	// Count the number of keys that are deleted
 	count := 0
 	for _, key := range args {
-		if datastructure.Delete(key) {
+		if core.Delete(key) {
 			count++
 		}
 	}
@@ -31,7 +31,7 @@ func handleExists(args []string) []byte {
 	// Count the number of keys that exist. A repeated key is counted each time, like real Redis.
 	count := 0
 	for _, key := range args {
-		if datastructure.Exists(key) {
+		if core.Exists(key) {
 			count++
 		}
 	}
@@ -43,10 +43,10 @@ func handleTTL(args []string, timeUnit time.Duration) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'TTL'"))
 	}
 	// Peek: reading a key's TTL doesn't count as an access for eviction, like real Redis.
-	if datastructure.Peek(args[0]) == nil {
+	if core.Peek(args[0]) == nil {
 		return resp.EncodeReply(resp.Integer(-2))
 	}
-	expireAt, ok := datastructure.GetExpire(args[0])
+	expireAt, ok := core.GetExpire(args[0])
 	if !ok {
 		return resp.EncodeReply(resp.Integer(-1))
 	}
@@ -75,7 +75,7 @@ func handleExpire(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR value is not an integer or out of range"))
 	}
 	key := args[0]
-	if datastructure.Get(key) == nil {
+	if core.Get(key) == nil {
 		return resp.EncodeReply(resp.Integer(0))
 	}
 	now := time.Now()
@@ -84,9 +84,9 @@ func handleExpire(args []string) []byte {
 		// A non-positive timeout means "expire right now": real Redis
 		// deletes the key immediately rather than storing a past
 		// expireAt for the next lazy/active sweep to find.
-		datastructure.Delete(key)
+		core.Delete(key)
 		return resp.EncodeReply(resp.Integer(1))
 	}
-	datastructure.SetExpire(key, expireAt)
+	core.SetExpire(key, expireAt)
 	return resp.EncodeReply(resp.Integer(1))
 }

@@ -1,6 +1,7 @@
 package command
 
 import (
+	"Redis-k02/Part7/internal/core"
 	"Redis-k02/Part7/internal/datastructure"
 	"Redis-k02/Part7/internal/resp"
 	"strconv"
@@ -11,14 +12,14 @@ func handleZAdd(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'ZADD'"))
 	}
 	key := args[0]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindZSet); err != nil {
+	if err := checkType(obj, core.KindZSet); err != nil {
 		return err
 	}
 	if obj == nil {
-		obj = &datastructure.Object{Kind: datastructure.KindZSet, Value: datastructure.NewSortedSet(4)}
-		datastructure.Set(key, obj)
+		obj = &core.Object{Kind: core.KindZSet, Value: datastructure.NewSortedSet(4)}
+		core.Set(key, obj)
 	}
 
 	// Parse every (score, member) pair before mutating anything, so a bad
@@ -48,9 +49,9 @@ func handleZRem(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'ZREM'"))
 	}
 	key := args[0]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindZSet); err != nil {
+	if err := checkType(obj, core.KindZSet); err != nil {
 		return err
 	}
 	if obj == nil {
@@ -69,9 +70,9 @@ func handleZScore(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'ZSCORE'"))
 	}
 	key, member := args[0], args[1]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindZSet); err != nil {
+	if err := checkType(obj, core.KindZSet); err != nil {
 		return err
 	}
 	if obj == nil {
@@ -90,9 +91,9 @@ func handleZRank(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'ZRANK'"))
 	}
 	key, member := args[0], args[1]
-	obj := datastructure.Get(key)
+	obj := core.Get(key)
 	// check if the key already holds a different type of datastructure
-	if err := checkType(obj, datastructure.KindZSet); err != nil {
+	if err := checkType(obj, core.KindZSet); err != nil {
 		return err
 	}
 	if obj == nil {

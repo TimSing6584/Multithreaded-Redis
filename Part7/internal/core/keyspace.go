@@ -1,7 +1,7 @@
 // This file defines the keyspace: one map from key to an Object that carries
 // both the value and the kind of datastructure it is (e.g., string, set, sorted set,...).
 // Plus with functions like get, set, delete a key and check its type,...
-package datastructure
+package core
 
 // Kind identifies which datastructure a key currently holds.
 // A key can only hold one datastructure at a time: overwriting it with a different type
@@ -18,7 +18,7 @@ const (
 )
 
 // Object is the value stored for a key. Value's concrete type depends on Kind:
-// KindString -> string, KindSet -> *SimpleSet.
+// KindString -> string, KindSet -> *datastructure.SimpleSet, KindZSet -> *datastructure.ZSet,...
 type Object struct {
 	Kind  Kind
 	Value any
