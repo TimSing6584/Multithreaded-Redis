@@ -42,7 +42,8 @@ func handleTTL(args []string, timeUnit time.Duration) []byte {
 	if len(args) != 1 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'TTL'"))
 	}
-	if datastructure.Get(args[0]) == nil {
+	// Peek: reading a key's TTL doesn't count as an access for eviction, like real Redis.
+	if datastructure.Peek(args[0]) == nil {
 		return resp.EncodeReply(resp.Integer(-2))
 	}
 	expireAt, ok := datastructure.GetExpire(args[0])

@@ -23,8 +23,7 @@ func GetExpire(key string) (time.Time, bool) {
 func expireIfNeeded(key string) bool {
 	at, ok := expires[key]
 	if ok && time.Now().After(at) {
-		delete(store, key)
-		delete(expires, key)
+		removeKey(key)
 		return true
 	}
 	return false
@@ -54,8 +53,7 @@ func ActiveExpireDelete(budget time.Duration) {
 				break
 			}
 			if !now.Before(at) {
-				delete(store, key)
-				delete(expires, key)
+				removeKey(key)
 				deleted++
 			}
 			sampled++
