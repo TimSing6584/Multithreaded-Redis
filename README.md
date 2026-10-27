@@ -8,3 +8,4 @@
 - [Part 4 - Basic Commands (PING, GET, SET, TTL,...)](Part4/Documentation/README.md)
 - [Part 5 - More Commands: Simple Set, Sorted Set (use B+ tree)](Part5/Documentation/README.md)
 - [Part 6 - More Commands: CMS, Bloom Filter](Part6/Documentation/README.md)
+- [Part 7 - Cache Eviction](Part7/Documentation/README.md)
