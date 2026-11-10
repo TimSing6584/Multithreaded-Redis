@@ -9,3 +9,4 @@
 - [Part 5 - More Commands: Simple Set, Sorted Set (use B+ tree)](Part5/Documentation/README.md)
 - [Part 6 - More Commands: CMS, Bloom Filter](Part6/Documentation/README.md)
 - [Part 7 - Cache Eviction](Part7/Documentation/README.md)
+- [Part 8 - Graceful Shutdown](Part8/Documentation/README.md)
