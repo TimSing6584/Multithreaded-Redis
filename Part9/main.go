@@ -71,17 +71,17 @@ func chooseServer() (server, error) {
 			}
 			fmt.Println("Single-thread server started on port", config.Port)
 			return srv, nil
-		// case "2":
-		// 	srv, err := multithread.New(config.Port, config.NumIOHandlers, config.NumWorkers)
-		// 	if err != nil {
-		// 		return nil, err
-		// 	}
-		// 	fmt.Printf("Multi-thread server started on port %s (io handlers=%d, workers=%d)\n",
-		// 		config.Port, config.NumIOHandlers, config.NumWorkers)
-		// 	return srv, nil
-		// default:
-		// 	fmt.Println("Please type 1 or 2.")
-		// }
+		case "2":
+			srv, err := multithread.New(config.Port, config.NumIOHandlers, config.NumWorkers)
+			if err != nil {
+				return nil, err
+			}
+			fmt.Printf("Multi-thread server started on port %s (io handlers=%d, workers=%d)\n",
+				config.Port, config.NumIOHandlers, config.NumWorkers)
+			return srv, nil
+		default:
+			fmt.Println("Please type 1 or 2.")
+		}
 	}
 }
 
