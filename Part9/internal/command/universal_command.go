@@ -10,43 +10,43 @@ import (
 	"time"
 )
 
-func handleDel(args []string) []byte {
+func handleDel(store *core.Store, args []string) []byte {
 	if len(args) < 1 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'DEL'"))
 	}
 	// Count the number of keys that are deleted
 	count := 0
 	for _, key := range args {
-		if core.Delete(key) {
+		if store.Delete(key) {
 			count++
 		}
 	}
 	return resp.EncodeReply(resp.Integer(count))
 }
 
-func handleExists(args []string) []byte {
+func handleExists(store *core.Store, args []string) []byte {
 	if len(args) < 1 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'EXISTS'"))
 	}
 	// Count the number of keys that exist. A repeated key is counted each time, like real Redis.
 	count := 0
 	for _, key := range args {
-		if core.Exists(key) {
+		if store.Exists(key) {
 			count++
 		}
 	}
 	return resp.EncodeReply(resp.Integer(count))
 }
 
-func handleTTL(args []string, timeUnit time.Duration) []byte {
+func handleTTL(store *core.Store, args []string, timeUnit time.Duration) []byte {
 	if len(args) != 1 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'TTL'"))
 	}
 	// Peek: reading a key's TTL doesn't count as an access for eviction, like real Redis.
-	if core.Peek(args[0]) == nil {
+	if store.Peek(args[0]) == nil {
 		return resp.EncodeReply(resp.Integer(-2))
 	}
-	expireAt, ok := core.GetExpire(args[0])
+	expireAt, ok := store.GetExpire(args[0])
 	if !ok {
 		return resp.EncodeReply(resp.Integer(-1))
 	}
@@ -62,7 +62,7 @@ func handleTTL(args []string, timeUnit time.Duration) []byte {
 // unreachable expiration date, so it is rejected rather than wrapped.
 const maxExpireSeconds = math.MaxInt64 / int64(time.Second)
 
-func handleExpire(args []string) []byte {
+func handleExpire(store *core.Store, args []string) []byte {
 	if len(args) < 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'EXPIRE'"))
 	}
@@ -75,7 +75,7 @@ func handleExpire(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR value is not an integer or out of range"))
 	}
 	key := args[0]
-	if core.Get(key) == nil {
+	if store.Get(key) == nil {
 		return resp.EncodeReply(resp.Integer(0))
 	}
 	now := time.Now()
@@ -84,9 +84,9 @@ func handleExpire(args []string) []byte {
 		// A non-positive timeout means "expire right now": real Redis
 		// deletes the key immediately rather than storing a past
 		// expireAt for the next lazy/active sweep to find.
-		core.Delete(key)
+		store.Delete(key)
 		return resp.EncodeReply(resp.Integer(1))
 	}
-	core.SetExpire(key, expireAt)
+	store.SetExpire(key, expireAt)
 	return resp.EncodeReply(resp.Integer(1))
 }

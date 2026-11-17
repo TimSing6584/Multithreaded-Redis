@@ -21,8 +21,8 @@ const (
 // getOrCreateBloom returns the filter at key, creating one with the default
 // error rate and capacity if the key is absent. errReply is non-nil if the
 // key holds a different type.
-func getOrCreateBloom(key string) (bf *datastructure.BloomFilter, errReply []byte) {
-	obj := core.Get(key)
+func getOrCreateBloom(store *core.Store, key string) (bf *datastructure.BloomFilter, errReply []byte) {
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindBloom); err != nil {
 		return nil, err
@@ -32,17 +32,17 @@ func getOrCreateBloom(key string) (bf *datastructure.BloomFilter, errReply []byt
 			Kind:  core.KindBloom,
 			Value: datastructure.NewBloomFilter(bfDefaultCapacity, bfDefaultErrorRate),
 		}
-		core.Set(key, obj)
+		store.Set(key, obj)
 	}
 	return obj.Value.(*datastructure.BloomFilter), nil
 }
 
-func handleBFReserve(args []string) []byte {
+func handleBFReserve(store *core.Store, args []string) []byte {
 	if len(args) != 3 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'BF.RESERVE'"))
 	}
 	key := args[0]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindBloom); err != nil {
 		return err
@@ -70,26 +70,26 @@ func handleBFReserve(args []string) []byte {
 		return resp.EncodeReply(resp.Error("ERR filter too large: capacity and error rate need more than 512MB"))
 	}
 	bf := datastructure.NewBloomFilter(capacity, errorRate)
-	core.Set(key, &core.Object{Kind: core.KindBloom, Value: bf})
+	store.Set(key, &core.Object{Kind: core.KindBloom, Value: bf})
 	return resp.EncodeReply(resp.SimpleString("OK"))
 }
 
-func handleBFAdd(args []string) []byte {
+func handleBFAdd(store *core.Store, args []string) []byte {
 	if len(args) != 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'BF.ADD'"))
 	}
-	bf, errReply := getOrCreateBloom(args[0])
+	bf, errReply := getOrCreateBloom(store, args[0])
 	if errReply != nil {
 		return errReply
 	}
 	return resp.EncodeReply(resp.Integer(bf.AddIfNotExist(args[1])))
 }
 
-func handleBFMAdd(args []string) []byte {
+func handleBFMAdd(store *core.Store, args []string) []byte {
 	if len(args) < 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'BF.MADD'"))
 	}
-	bf, errReply := getOrCreateBloom(args[0])
+	bf, errReply := getOrCreateBloom(store, args[0])
 	if errReply != nil {
 		return errReply
 	}
@@ -100,12 +100,12 @@ func handleBFMAdd(args []string) []byte {
 	return resp.EncodeReply(resp.Array(values))
 }
 
-func handleBFExists(args []string) []byte {
+func handleBFExists(store *core.Store, args []string) []byte {
 	if len(args) != 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'BF.EXISTS'"))
 	}
 	key, item := args[0], args[1]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindBloom); err != nil {
 		return err
@@ -116,12 +116,12 @@ func handleBFExists(args []string) []byte {
 	return resp.EncodeReply(resp.Integer(obj.Value.(*datastructure.BloomFilter).Exist(item)))
 }
 
-func handleBFMExists(args []string) []byte {
+func handleBFMExists(store *core.Store, args []string) []byte {
 	if len(args) < 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'BF.MEXISTS'"))
 	}
 	key := args[0]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindBloom); err != nil {
 		return err
@@ -138,12 +138,12 @@ func handleBFMExists(args []string) []byte {
 	return resp.EncodeReply(resp.Array(values))
 }
 
-func handleBFInfo(args []string) []byte {
+func handleBFInfo(store *core.Store, args []string) []byte {
 	if len(args) != 1 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'BF.INFO'"))
 	}
 	key := args[0]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindBloom); err != nil {
 		return err

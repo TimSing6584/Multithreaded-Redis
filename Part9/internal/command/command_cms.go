@@ -13,12 +13,12 @@ const (
 	cmsKeyNotExistsErr = "CMS: key does not exist"
 )
 
-func handleCMSInitByDim(args []string) []byte {
+func handleCMSInitByDim(store *core.Store, args []string) []byte {
 	if len(args) != 3 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'CMS.INITBYDIM'"))
 	}
 	key := args[0]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindCMS); err != nil {
 		return err
@@ -35,16 +35,16 @@ func handleCMSInitByDim(args []string) []byte {
 		return resp.EncodeReply(resp.Error("CMS: invalid depth"))
 	}
 	cms := datastructure.NewCMS(uint32(width), uint32(depth))
-	core.Set(key, &core.Object{Kind: core.KindCMS, Value: cms})
+	store.Set(key, &core.Object{Kind: core.KindCMS, Value: cms})
 	return resp.EncodeReply(resp.SimpleString("OK"))
 }
 
-func handleCMSInitByProb(args []string) []byte {
+func handleCMSInitByProb(store *core.Store, args []string) []byte {
 	if len(args) != 3 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'CMS.INITBYPROB'"))
 	}
 	key := args[0]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindCMS); err != nil {
 		return err
@@ -64,16 +64,16 @@ func handleCMSInitByProb(args []string) []byte {
 	}
 	width, depth := datastructure.CalcCMSDim(errRate, errProb)
 	cms := datastructure.NewCMS(width, depth)
-	core.Set(key, &core.Object{Kind: core.KindCMS, Value: cms})
+	store.Set(key, &core.Object{Kind: core.KindCMS, Value: cms})
 	return resp.EncodeReply(resp.SimpleString("OK"))
 }
 
-func handleCMSIncrBy(args []string) []byte {
+func handleCMSIncrBy(store *core.Store, args []string) []byte {
 	if len(args) < 3 || len(args)%2 != 1 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'CMS.INCRBY'"))
 	}
 	key := args[0]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindCMS); err != nil {
 		return err
@@ -107,12 +107,12 @@ func handleCMSIncrBy(args []string) []byte {
 	return resp.EncodeReply(resp.Array(values))
 }
 
-func handleCMSQuery(args []string) []byte {
+func handleCMSQuery(store *core.Store, args []string) []byte {
 	if len(args) < 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'CMS.QUERY'"))
 	}
 	key := args[0]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindCMS); err != nil {
 		return err
@@ -128,12 +128,12 @@ func handleCMSQuery(args []string) []byte {
 	return resp.EncodeReply(resp.Array(values))
 }
 
-func handleCMSInfo(args []string) []byte {
+func handleCMSInfo(store *core.Store, args []string) []byte {
 	if len(args) != 1 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'CMS.INFO'"))
 	}
 	key := args[0]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindCMS); err != nil {
 		return err

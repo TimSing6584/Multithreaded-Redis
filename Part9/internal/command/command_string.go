@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func handleSet(args []string) []byte {
+func handleSet(store *core.Store, args []string) []byte {
 	if len(args) < 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'SET'"))
 	}
@@ -41,19 +41,19 @@ func handleSet(args []string) []byte {
 
 	}
 	// Set overwrites whatever type the key held before and clears its old TTL.
-	core.Set(key, &core.Object{Kind: core.KindString, Value: value})
+	store.Set(key, &core.Object{Kind: core.KindString, Value: value})
 	if !expireAt.IsZero() {
-		core.SetExpire(key, expireAt)
+		store.SetExpire(key, expireAt)
 	}
 	return resp.EncodeReply(resp.SimpleString("OK"))
 }
 
-func handleGet(args []string) []byte {
+func handleGet(store *core.Store, args []string) []byte {
 	if len(args) != 1 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'GET'"))
 	}
 	// Get applies lazy expiry: an expired key comes back as nil.
-	obj := core.Get(args[0])
+	obj := store.Get(args[0])
 	if obj == nil {
 		return resp.NilReply
 	}

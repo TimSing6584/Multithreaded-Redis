@@ -7,19 +7,19 @@ import (
 	"strconv"
 )
 
-func handleZAdd(args []string) []byte {
+func handleZAdd(store *core.Store, args []string) []byte {
 	if len(args) < 3 || len(args)%2 != 1 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'ZADD'"))
 	}
 	key := args[0]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindZSet); err != nil {
 		return err
 	}
 	if obj == nil {
 		obj = &core.Object{Kind: core.KindZSet, Value: datastructure.NewSortedSet(4)}
-		core.Set(key, obj)
+		store.Set(key, obj)
 	}
 
 	// Parse every (score, member) pair before mutating anything, so a bad
@@ -44,12 +44,12 @@ func handleZAdd(args []string) []byte {
 	return resp.EncodeReply(resp.Integer(added))
 }
 
-func handleZRem(args []string) []byte {
+func handleZRem(store *core.Store, args []string) []byte {
 	if len(args) < 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'ZREM'"))
 	}
 	key := args[0]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindZSet); err != nil {
 		return err
@@ -65,12 +65,12 @@ func handleZRem(args []string) []byte {
 	return resp.EncodeReply(resp.Integer(removed))
 }
 
-func handleZScore(args []string) []byte {
+func handleZScore(store *core.Store, args []string) []byte {
 	if len(args) != 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'ZSCORE'"))
 	}
 	key, member := args[0], args[1]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindZSet); err != nil {
 		return err
@@ -86,12 +86,12 @@ func handleZScore(args []string) []byte {
 
 }
 
-func handleZRank(args []string) []byte {
+func handleZRank(store *core.Store, args []string) []byte {
 	if len(args) != 2 {
 		return resp.EncodeReply(resp.Error("ERR wrong number of arguments for 'ZRANK'"))
 	}
 	key, member := args[0], args[1]
-	obj := core.Get(key)
+	obj := store.Get(key)
 	// check if the key already holds a different type of datastructure
 	if err := checkType(obj, core.KindZSet); err != nil {
 		return err

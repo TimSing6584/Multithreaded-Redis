@@ -44,6 +44,16 @@ func EncodeReply(v Value) []byte {
 	}
 }
 
+// DecodeInteger decodes an already-encoded RESP integer reply (":<n>\r\n") back into n.
+// The multithread server uses it to sum the per-worker replies of a fanned-out DEL/EXISTS.
+func DecodeInteger(reply []byte) (int, error) {
+	s := string(reply)
+	if len(s) < 3 || s[0] != ':' || !strings.HasSuffix(s, "\r\n") {
+		return 0, fmt.Errorf("not an integer reply: %q", s)
+	}
+	return strconv.Atoi(s[1 : len(s)-2])
+}
+
 // --------Helpers--------
 
 // IncompleteError: this happens when the client sends a partial command, and we need to wait for more data before we can parse it.

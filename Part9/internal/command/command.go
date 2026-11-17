@@ -12,7 +12,7 @@ import (
 // that already holds a string.
 const wrongTypeErr = "WRONGTYPE Operation against a key holding the wrong kind of value"
 
-// checkType returns a WRONGTYPE reply if obj (from core.Get) is a
+// checkType returns a WRONGTYPE reply if obj (from store.Get) is a
 // different kind, or nil if the caller may proceed (obj is nil, i.e. the key
 // is absent, or already the right kind).
 func checkType(obj *core.Object, want core.Kind) []byte {
@@ -32,7 +32,7 @@ func pingHandler(args []string) []byte {
 	return resp.EncodeReply(resp.SimpleString("PONG"))
 }
 
-func Handle(cmd resp.Command) []byte {
+func Handle(store *core.Store, cmd resp.Command) []byte {
 	if cmd.Name == "" {
 		return resp.NilReply
 	}
@@ -40,57 +40,57 @@ func Handle(cmd resp.Command) []byte {
 	case "PING":
 		return pingHandler(cmd.Args)
 	case "SET":
-		return handleSet(cmd.Args)
+		return handleSet(store, cmd.Args)
 	case "GET":
-		return handleGet(cmd.Args)
+		return handleGet(store, cmd.Args)
 	case "TTL":
-		return handleTTL(cmd.Args, time.Second)
+		return handleTTL(store, cmd.Args, time.Second)
 	case "PTTL":
-		return handleTTL(cmd.Args, time.Millisecond)
+		return handleTTL(store, cmd.Args, time.Millisecond)
 	case "EXPIRE":
-		return handleExpire(cmd.Args)
+		return handleExpire(store, cmd.Args)
 	case "DEL":
-		return handleDel(cmd.Args)
+		return handleDel(store, cmd.Args)
 	case "EXISTS":
-		return handleExists(cmd.Args)
+		return handleExists(store, cmd.Args)
 	case "SADD":
-		return handleSAdd(cmd.Args)
+		return handleSAdd(store, cmd.Args)
 	case "SREM":
-		return handleSRem(cmd.Args)
+		return handleSRem(store, cmd.Args)
 	case "SISMEMBER":
-		return handleSIsMember(cmd.Args)
+		return handleSIsMember(store, cmd.Args)
 	case "SMEMBERS":
-		return handleSMembers(cmd.Args)
+		return handleSMembers(store, cmd.Args)
 	case "ZADD":
-		return handleZAdd(cmd.Args)
+		return handleZAdd(store, cmd.Args)
 	case "ZREM":
-		return handleZRem(cmd.Args)
+		return handleZRem(store, cmd.Args)
 	case "ZSCORE":
-		return handleZScore(cmd.Args)
+		return handleZScore(store, cmd.Args)
 	case "ZRANK":
-		return handleZRank(cmd.Args)
+		return handleZRank(store, cmd.Args)
 	case "CMS.INITBYDIM":
-		return handleCMSInitByDim(cmd.Args)
+		return handleCMSInitByDim(store, cmd.Args)
 	case "CMS.INITBYPROB":
-		return handleCMSInitByProb(cmd.Args)
+		return handleCMSInitByProb(store, cmd.Args)
 	case "CMS.INCRBY":
-		return handleCMSIncrBy(cmd.Args)
+		return handleCMSIncrBy(store, cmd.Args)
 	case "CMS.QUERY":
-		return handleCMSQuery(cmd.Args)
+		return handleCMSQuery(store, cmd.Args)
 	case "CMS.INFO":
-		return handleCMSInfo(cmd.Args)
+		return handleCMSInfo(store, cmd.Args)
 	case "BF.RESERVE":
-		return handleBFReserve(cmd.Args)
+		return handleBFReserve(store, cmd.Args)
 	case "BF.ADD":
-		return handleBFAdd(cmd.Args)
+		return handleBFAdd(store, cmd.Args)
 	case "BF.MADD":
-		return handleBFMAdd(cmd.Args)
+		return handleBFMAdd(store, cmd.Args)
 	case "BF.EXISTS":
-		return handleBFExists(cmd.Args)
+		return handleBFExists(store, cmd.Args)
 	case "BF.MEXISTS":
-		return handleBFMExists(cmd.Args)
+		return handleBFMExists(store, cmd.Args)
 	case "BF.INFO":
-		return handleBFInfo(cmd.Args)
+		return handleBFInfo(store, cmd.Args)
 	default:
 		return resp.EncodeReply(resp.Error("ERR unknown command"))
 	}
