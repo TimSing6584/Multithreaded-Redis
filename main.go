@@ -12,9 +12,9 @@ import (
 	"net"
 	"syscall"
 
-	"Redis-k02/Part3/internal/command"
-	"Redis-k02/Part3/internal/resp"
-	"Redis-k02/Part3/io_multiplexing"
+	"Redis-k02/internal/command"
+	"Redis-k02/internal/resp"
+	"Redis-k02/io_multiplexing"
 )
 
 // handleReadable is called once per read-ready event on connFd. It does a

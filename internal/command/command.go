@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"Redis-k02/Part3/internal/resp"
+	"Redis-k02/internal/resp"
 )
 
 func encodeSimpleString(s string) []byte {
