@@ -1,13 +1,18 @@
-# Redis-k02
+# Part 5 - Set & Sorted Set
 
-## Documentation during my journey
+Set (SADD, SREM, SISMEMBER, SMEMBERS) and Sorted Set (ZADD, ZREM, ZSCORE, ZRANK), with the sorted set backed by a B+ tree.
 
-- [Part 1 - Redis Fundamentals](Part1/Documentation/README.md)
-- [Part 2 - TCP Server](Part2/Documentation/README.md)
-- [Part 3 - I/O Multiplexing + RESP](Part3/Documentation/README.md)
-- [Part 4 - Basic Commands (PING, GET, SET, TTL,...)](Part4/Documentation/README.md)
-- [Part 5 - More Commands: Simple Set, Sorted Set (use B+ tree)](Part5/Documentation/README.md)
-- [Part 6 - More Commands: CMS, Bloom Filter](Part6/Documentation/README.md)
-- [Part 7 - Cache Eviction](Part7/Documentation/README.md)
-- [Part 8 - Graceful Shutdown](Part8/Documentation/README.md)
-- [Part 9 - Multithread Redis](Part9/Documentation/README.md)
+This branch is part 5 of **Redis-k02**, a Redis clone built from scratch in Go, one concept per part.
+It is a snapshot of the code as it was at the end of this part.
+
+- Notes for this part: [Documentation/README.md](Documentation/README.md)
+- The latest version, its architecture and benchmarks: [main branch](https://github.com/TimSing6584/Multithread-Redis)
+
+## Run
+
+Linux only (it uses epoll), so on Windows run it inside WSL:
+
+```
+go run .
+redis-cli -p 4000
+```
