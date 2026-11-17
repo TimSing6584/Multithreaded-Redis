@@ -176,7 +176,7 @@ Redis-k02/
 
 ## D. Getting started
 
-I only implemented the I/O multiplexer with `epoll`, so the server currently runs on **Linux**. On Windows, run it inside WSL.
+I only implemented the I/O multiplexer with `epoll`, so the server currently runs on **Linux**. 
 
 ```bash
 go run .
