@@ -10,3 +10,4 @@
 - [Part 6 - More Commands: CMS, Bloom Filter](Part6/Documentation/README.md)
 - [Part 7 - Cache Eviction](Part7/Documentation/README.md)
 - [Part 8 - Graceful Shutdown](Part8/Documentation/README.md)
+- [Part 9 - Multithread Redis](Part9/Documentation/README.md)
