@@ -1,75 +1,182 @@
-# Redis-k02
+# Building single-thread and multithreaded Redis server from scratch in Go
 
-A Redis server built from scratch in Go, one concept at a time. It started as a plain TCP server and ended as a **shared-nothing multithreaded** engine.
+I first built a single-thread Redis server whose I/O model is **I/O multiplexing** (`epoll`), the same model real Redis uses. A server like this is I/O-bound: most of its time goes into reading from and writing to sockets. That made me curious what happens if I add more threads to the I/O layer, so I built **both versions**. You pick one when the server starts.
 
-It speaks RESP, the real Redis protocol, so `redis-cli` and `redis-benchmark` work against it with no changes. This README describes the latest version. Every earlier step is kept on its own branch (see [The journey](#the-journey)).
+Both speak RESP, the Redis protocol, so `redis-cli` and `redis-benchmark` work against them unchanged.
 
-## What it does
+## A. What I built
 
-| Area | What is implemented |
+| Area | Implemented |
 |---|---|
-| Protocol | RESP parser that copes with partial reads and pipelined commands |
-| Strings and keys | `PING`, `SET` (with `EX`), `GET`, `DEL`, `EXISTS` |
-| Expiry | `TTL`, `PTTL`, `EXPIRE`. Expired keys are deleted lazily (on access) and actively (a periodic sampling sweep with a time budget) |
-| Set | `SADD`, `SREM`, `SISMEMBER`, `SMEMBERS` |
-| Sorted set | `ZADD`, `ZREM`, `ZSCORE`, `ZRANK`, backed by a B+ tree with O(log n) rank |
+| Basic commands | `PING`, `SET` (with `EX`), `GET`, `DEL`, `EXISTS`, `TTL`, `PTTL`, `EXPIRE` |
+| Simple set | `SADD`, `SREM`, `SISMEMBER`, `SMEMBERS` |
+| Sorted set (B+ tree) | `ZADD`, `ZREM`, `ZSCORE`, `ZRANK` |
 | Count-min Sketch | `CMS.INITBYDIM`, `CMS.INITBYPROB`, `CMS.INCRBY`, `CMS.QUERY`, `CMS.INFO` |
 | Bloom filter | `BF.RESERVE`, `BF.ADD`, `BF.MADD`, `BF.EXISTS`, `BF.MEXISTS`, `BF.INFO` |
-| Eviction | Random, LRU, or approximated LRU (Redis-style sampling with an eviction pool) once `MaxKeys` is reached |
-| Shutdown | Graceful on SIGINT/SIGTERM: stop accepting, close every connection, then exit |
-| Engines | **Single-thread** or **multithread**, chosen when the server starts |
+| Key expiry | Lazy + active deletion |
+| Cache eviction | Random, LRU (all keys), approximated LRU |
+| Graceful shutdown | Handle SIGINT / SIGTERM |
+| Server engines | Single-thread, multithread |
 
-## Architecture
+## B. Architecture
 
-### Single-thread engine
-
-One goroutine runs an event loop on top of `epoll`. The OS reports which connections are readable. The loop reads them, parses the commands, runs them against the one keyspace and writes the replies. `Wait()` has a timeout, so even when no client is active the loop wakes up regularly to run the active-expiry sweep.
-
-### Multithread engine (shared-nothing)
+### 1. Single-thread
 
 ```mermaid
 flowchart LR
-    C1[Client 1] --> L
-    C2[Client 2] --> L
-    C3[Client 3] --> L
-    L[Listener] -- round robin --> IO1["IO Handler 1<br/><small>own epoll</small>"]
-    L -- round robin --> IO2["IO Handler 2<br/><small>own epoll</small>"]
-    IO1 -- "hash(key) % M" --> W1[("Worker 1<br/><small>own store</small>")]
-    IO1 --> W2[("Worker 2<br/><small>own store</small>")]
-    IO2 --> W2
-    IO2 --> W3[("Worker 3<br/><small>own store</small>")]
+    C(["Clients"]) -- "connect /<br/>send commands" --> W["epoll Wait()"]
+    W -- "listener ready:<br/>new client" --> A["accept the connection<br/>and add it to epoll"]
+    W -- "connection readable:<br/>new command" --> R["read + parse<br/>the command (RESP)"]
+    R --> E["execute"] --> P["write the reply<br/>to the client"]
+
+    classDef wait fill:#d5e8d4,stroke:#82b366,color:#000
+    classDef read fill:#f8cecc,stroke:#b85450,color:#000
+    classDef exec fill:#e1d5e7,stroke:#9673a6,color:#000
+    classDef resp fill:#fff2cc,stroke:#d6b656,color:#000
+    class W wait
+    class A,R read
+    class E exec
+    class P resp
 ```
 
-- **Listener (1):** accepts connections and hands each one to an IO handler, round robin.
-- **IO handlers (N):** each runs its own `epoll` loop over its connections. It reads and parses a command, picks the owning worker with `hash(key) % M`, waits for that worker's reply and writes it to the client. One connection is handled one command at a time, so pipelined replies come back in order.
-- **Workers (M):** each owns one partition of the keyspace: its own store, expiry table and eviction state, so **no locks** are needed. A worker runs its commands one after another and does active expiry on a ticker.
-- **Communication:** only Go channels, never shared memory. Each worker has a **task channel** and each IO handler a **reply channel**. A task carries the command plus the reply channel the result goes back on, so a worker never needs to know who sent it.
-- **Special cases:** `DEL` and `EXISTS` with several keys are split into one sub-command per owning worker, and the integer replies are summed (this isn't atomic across workers). Keyless commands such as `PING` go to any worker, round robin.
-- **Sizing:** N and M are set separately (by default each is half the CPU count). `MaxKeys` is split evenly across the workers.
+One thread does everything. `epoll` watches the listener and every client connection, and `Wait()` blocks until one of them is ready:
+- The listener is ready: a new client is connecting. Accept it and add the connection to `epoll`'s watch list.
+- A connection is readable: a command has arrived. Read and parse it, execute it, write the reply, and go back to `Wait()`.
 
-The reasoning behind this design (shared-memory vs shared-nothing) is in [Documentation/9-Multithread_Redis](Documentation/9-Multithread_Redis/README.md).
+`Wait()` also has a timeout, so the loop wakes up regularly to delete expired keys even when no client is active.
 
-## Project layout
+So the whole server is one loop:
+
+```mermaid
+block-beta
+    columns 3
+    space W["ioMultiplexer.Wait()"] space
+    P["response"] T["1 thread"] R["readCommand"]
+    space E["execute"] space
+
+    W --> R
+    R --> E
+    E --> P
+    P --> W
+
+    classDef wait fill:#d5e8d4,stroke:#82b366,color:#000
+    classDef read fill:#f8cecc,stroke:#b85450,color:#000
+    classDef exec fill:#e1d5e7,stroke:#9673a6,color:#000
+    classDef resp fill:#fff2cc,stroke:#d6b656,color:#000
+    classDef label fill:none,stroke:none
+    class W wait
+    class R read
+    class E exec
+    class P resp
+    class T label
+```
+
+### 2. Multithreaded
+
+One loop can only use one CPU core. Since the work is mostly I/O, I added more threads to the I/O layer: copy the single-thread loop several times, so many clients are served in parallel. The open question is what to do with the data. There are two models:
+
+#### a. Shared-memory
+
+```mermaid
+flowchart LR
+    T1["Thread 1"] --> D[("Data<br/>(locks)")]
+    T2["Thread 2"] --> D
+    T3["Thread 3"] --> D
+```
+
+All threads read and write the same data, so every access needs a lock (a mutex). Only one thread can hold the lock at a time, and the others wait. With 3 threads, the CPU keeps switching between them, but only one is doing real work at any moment. Adding threads doesn't make data access faster; it just adds waiting and context switching.
+
+#### b. Shared-nothing
+
+```mermaid
+flowchart LR
+    T1["Thread 1"] --> P1[("Partition 1")]
+    T2["Thread 2"] --> P2[("Partition 2")]
+    T3["Thread 3"] --> P3[("Partition 3")]
+```
+
+Each thread owns one partition of the data and never touches the others, so there are no locks and no thread waits for another. The price is complexity: every command must be sent to the thread that owns its key, and commands that touch several keys need extra work.
+
+**This project uses shared-nothing.** I accept the extra complexity to get real parallelism.
+
+#### The multithreaded architecture
+
+```mermaid
+---
+config:
+  layout: elk
+  elk:
+    forceNodeModelOrder: true
+    considerModelOrder: NODES_AND_EDGES
+---
+flowchart LR
+    C1[Client 1]
+    C2[Client 2]
+    C3[Client 3]
+    L[Listener]
+    IO1["IO Handler 1<br/><small>epoll monitoring list</small>"]
+    IO2["IO Handler 2<br/><small>epoll monitoring list</small>"]
+    IO3["IO Handler 3<br/><small>epoll monitoring list</small>"]
+    W1[(Worker 1)]
+    W2[(Worker 2)]
+    W3[(Worker 3)]
+    W4[(Worker 4)]
+
+    C1 -- conn_1 --> L
+    C2 -- conn_2 --> L
+    C3 -- conn_3 --> L
+
+    L -- conn_1 --> IO1
+    L -- conn_2 --> IO2
+    L -- conn_3 --> IO3
+
+    IO1 -- cmd --> W3
+    IO2 -- cmd --> W1
+    IO3 -- cmd --> W2
+    IO3 -- cmd --> W4
+
+    classDef client fill:#fff,stroke:#333
+    classDef listener fill:#d5e8d4,stroke:#82b366
+    classDef io fill:#dae8fc,stroke:#6c8ebf
+    classDef worker fill:#fff2cc,stroke:#d6b656
+    class C1,C2,C3 client
+    class L listener
+    class IO1,IO2,IO3 io
+    class W1,W2,W3,W4 worker
+```
+
+- **Listener:** accepts new connections and hands each one to an IO handler, round robin.
+- **IO handlers:** each runs its own `epoll` loop over its connections. It reads and parses commands, sends each one to the worker that owns its key (`hash(key) % M`), and writes the reply back to the client.
+- **Workers:** each owns one partition: its own keyspace, expiry and eviction state, so it needs no locks. It executes its commands one at a time and also deletes expired keys in its partition.
+- **Channels:** IO handlers and workers only talk through Go channels. Each worker has a task channel, and each IO handler has a reply channel. A task carries the command plus the reply channel to answer on.
+- **Special cases:** a multi-key `DEL` / `EXISTS` is split per worker and the counts are added up. Keyless commands such as `PING` go to any worker.
+
+More details are in [Documentation/9-Multithread_Redis](Documentation/9-Multithread_Redis/README.md).
+
+## C. Project layout
 
 ```
-main.go                 entry point: asks for single-thread or multithread, then starts it
-internal/
-  resp/                 RESP parser and encoder
-  command/              command handlers: strings, keys, set, sorted set, CMS, Bloom filter
-  core/                 Store: keyspace, expiry, eviction (one per engine / per worker)
-  datastructure/        simple set, B+ tree sorted set, CMS, Bloom filter, LRU list, eviction pool
-  config/               every tunable number in one place
-  server/               shared plumbing: listener, per-connection read -> parse -> reply
-    single_thread/      the event-loop engine
-    multithread/        listener + IO handlers + workers
-io_multiplexing/        epoll wrapper
-benchmark/              run.sh and its latest result.md
-Documentation/          my notes for every part, 1 to 9
+Redis-k02/
+├── main.go                   # entry point: asks for single-thread or multithread, then starts it
+├── internal/
+│   ├── resp/                 # RESP parser and encoder
+│   ├── command/              # command handlers: strings, keys, set, sorted set, CMS, Bloom filter
+│   ├── core/                 # Store: keyspace, expiry, eviction (one per engine / per worker)
+│   ├── datastructure/        # simple set, B+ tree sorted set, CMS, Bloom filter, LRU list, eviction pool
+│   ├── config/               # every tunable number in one place
+│   └── server/               # shared plumbing: listener, per-connection read -> parse -> reply
+│       ├── single_thread/    # the event-loop engine
+│       └── multithread/      # listener + IO handlers + workers
+├── io_multiplexing/          # i/o multiplexing wrapper
+├── benchmark/                # run.sh and its latest result.md
+├── Documentation/            # my notes for every part, 1 to 9
+├── go.mod
+└── README.md
 ```
 
-## Getting started
+## D. Getting started
 
-The server uses `epoll`, so it runs on **Linux only**. On Windows, run it inside WSL.
+I only implemented the I/O multiplexer with `epoll`, so the server currently runs on **Linux**. On Windows, run it inside WSL.
 
 ```bash
 go run .
@@ -88,42 +195,60 @@ OK
 "world"
 ```
 
-## Benchmark
+## E. Benchmark
 
-`redis-benchmark` against real Redis 7.0.15 and both engines, on a laptop: Intel i5-1135G7 (4 cores / 8 threads) running WSL2. The numbers are requests/sec, written SET / GET.
+`redis-benchmark` on a laptop: Intel i5-1135G7 (4 cores / 8 threads), WSL2. The comparison is single-thread vs multithread. Real Redis 7.0.15 is only a reference point for checking the setup, so it doesn't count toward the winner.
 
-| Test | Real Redis | Single-thread | Multithread | Winner |
++) **Throughput (requests/sec, higher is better)**
+
+| Test | Single-thread | Multithread | Real Redis (reference) | Winner |
 |---|---:|---:|---:|---|
-| 1 client (latency) | 16k / 17k | 12.6k / 15.8k | 15.3k / 10.9k | Real ≈ Single |
-| 50 clients | 194k / 140k | 143k / 125k | 56k / 54k | Real |
-| 200 clients, 4 client threads | 120k / 61k | 55k / 42k | 68k / 82k | Mixed |
-| Hot key (all clients on 1 key) | 56k / 55k | 56k / 35k | 50k / 45k | Real ≈ Single |
-| Pipelining (`-P 16`) | 98k / 198k | 19k / 18k | 18k / 18k | Real |
-| SMEMBERS on ~400-member sets | 4.3k | 3.6k | 5.4k | Multithread |
+| 1 client (SET / GET) | 12.6k / 15.8k | 15.3k / 10.9k | 16k / 17k | Even |
+| 50 clients (SET / GET) | 143k / 125k | 56k / 54k | 194k / 140k | Single-thread |
+| 200 clients, 4 client threads (SET / GET) | 55k / 42k | 68k / 82k | 120k / 61k | Multithread |
+| Hot key, all clients on 1 key (SET / GET) | 56k / 35k | 50k / 45k | 56k / 55k | Even |
+| Pipelining, `-P 16` (SET / GET) | 19k / 18k | 18k / 18k | 98k / 198k | Even |
+| Heavy command on ~400-member sets (SMEMBERS) | 3.6k | 5.4k | 4.3k | Multithread |
 
-What this shows:
-- **Single-thread** gets close to real Redis on plain request/reply traffic.
-- **Multithread** pays for two channel handoffs on every command. It only pays off with many concurrent clients or CPU-heavy commands. With a hot key, all the work lands on one worker.
-- **Pipelining** is the biggest gap. Each reply goes out in its own `write`, and without `TCP_NODELAY`, Nagle's algorithm holds the small writes back. Real Redis writes a whole batch of replies at once.
-- This is a single run on a laptop, so it's noisy. The full tables with latencies, and how each test was run, are in [benchmark/result.md](benchmark/result.md). To rerun: `bash benchmark/run.sh` inside WSL (about 10 minutes, ports 4000 and 5000 must be free).
++) **Latency (p50 in ms, lower is better)**
 
-## The journey
+| Test | Single-thread | Multithread | Real Redis (reference) | Winner |
+|---|---:|---:|---:|---|
+| 1 client (SET / GET) | 0.063 / 0.055 | 0.071 / 0.079 | 0.055 / 0.055 | Single-thread |
+| 50 clients (SET / GET) | 0.183 / 0.191 | 0.495 / 0.479 | 0.183 / 0.175 | Single-thread |
+| 200 clients, 4 client threads (SET / GET) | 3.295 / 3.439 | 1.199 / 1.231 | 1.831 / 2.679 | Multithread |
+| Hot key, all clients on 1 key (SET / GET) | 2.535 / 3.199 | 1.199 / 1.367 | 2.607 / 2.703 | Multithread |
+| Pipelining, `-P 16` (SET / GET) | n/a | n/a | n/a | n/a |
+| Heavy command on ~400-member sets (SMEMBERS) | 55.967 | 36.127 | 44.767 | Multithread |
+
+Pipelining latency is left out because redis-benchmark only times each 16-command batch until its first reply, so those numbers don't mean much.
+
+- **Single-thread wins under light load (1–50 clients).** Each command is handled start to finish on one thread, while multithread pays for two hand-offs between threads per command. So single-thread has the lower latency, and at 50 clients much higher throughput.
+- **Multithread wins with many concurrent clients and CPU-heavy commands.** Reading, parsing and executing are spread across CPU cores, so it wins on both throughput and latency.
+- **Throughput is even with a hot key and with pipelining.** With a hot key every command goes to the same worker; with pipelining both engines are limited by the same reply-writing code. With a hot key, multithread still has the lower latency, because reading and parsing stay parallel across IO handlers.
+
+This is one run on a laptop, so the numbers are noisy. The full tables with latencies, and how to rerun them, are in [benchmark/result.md](benchmark/result.md).
+
+## F. The journey
 
 Each part's code is on its own branch, and its notes are in [Documentation/](Documentation).
 
-| Part | Topic | What I built and learned | Code | Notes |
+| Part | Topic | Covers | Branch | Notes |
 |---|---|---|---|---|
-| 1 | Redis introduction | What Redis is; programs vs processes vs OS threads vs goroutines; thread-per-connection, thread pool and event-driven server models; a mutex-protected counter | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part1-Redis_Introduction) | [notes](Documentation/1-Redis_Introduction/README.md) |
-| 2 | TCP server | A TCP server, client and thread pool in Go; "everything is a file" and file descriptors; the I/O models (blocking, non-blocking, asynchronous, multiplexing) | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part2-TCP_Server) | [notes](Documentation/2-TCP_Server/README.md) |
-| 3 | I/O multiplexing + RESP | A single-threaded server on `epoll`; a parser for RESP, the Redis protocol | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part3-IO_Multiplexing_RESP) | [notes](Documentation/3-IO_Multiplexing_RESP/README.md) |
-| 4 | Basic commands | `PING`, `SET`, `GET`, `TTL`, `EXPIRE`, `DEL`, `EXISTS`; buffering partial commands per connection; lazy + active expiry with a sampling threshold and a time budget | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part4-Basic_Commands) | [notes](Documentation/4-Basic_Commands/README.md) |
-| 5 | Set and sorted set | Set commands; a sorted set on a B+ tree instead of Redis's skiplist, with O(log n) rank using subtree counts | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part5-Set_SortedSet) | [notes](Documentation/5-Set_SortedSet/README.md) |
-| 6 | Count-min Sketch and Bloom filter | Probabilistic data structures: counting and membership in a fixed amount of memory, sizing from error rates, double hashing, bit arrays | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part6-CMS_BloomFilter) | [notes](Documentation/6-CMS_BloomFilter/README.md) |
-| 7 | Cache eviction | Random, exact LRU (map + doubly linked list), and Redis's approximated LRU (sampling + eviction pool) and its trade-offs | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part7-Cache_Eviction) | [notes](Documentation/7-Cache_Eviction/README.md) |
-| 8 | Graceful shutdown | What signals are and how they're handled; stopping the event loop and closing every connection before exit | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part8-Graceful_Shutdown) | [notes](Documentation/8-Graceful_Shutdown/README.md) |
-| 9 | Multithread Redis | Shared-memory vs shared-nothing; refactoring global state into a per-worker `Store`; listener, IO handlers, workers, channels; benchmarking against real Redis | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part9-Multithread_Redis) | [notes](Documentation/9-Multithread_Redis/README.md) |
+| 1 | Redis introduction | Processes, threads, goroutines; server models | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part1-Redis_Introduction) | [notes](Documentation/1-Redis_Introduction/README.md) |
+| 2 | TCP server | TCP server, thread pool, file descriptors, I/O models | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part2-TCP_Server) | [notes](Documentation/2-TCP_Server/README.md) |
+| 3 | I/O multiplexing + RESP | `epoll` event loop, RESP parser | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part3-IO_Multiplexing_RESP) | [notes](Documentation/3-IO_Multiplexing_RESP/README.md) |
+| 4 | Basic commands | `PING`, `SET`, `GET`, `TTL`, `EXPIRE`, `DEL`, `EXISTS`; key expiry | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part4-Basic_Commands) | [notes](Documentation/4-Basic_Commands/README.md) |
+| 5 | Set and sorted set | Simple set; sorted set on a B+ tree | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part5-Set_SortedSet) | [notes](Documentation/5-Set_SortedSet/README.md) |
+| 6 | Count-min Sketch and Bloom filter | Probabilistic data structures and their commands | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part6-CMS_BloomFilter) | [notes](Documentation/6-CMS_BloomFilter/README.md) |
+| 7 | Cache eviction | Random, LRU, approximated LRU | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part7-Cache_Eviction) | [notes](Documentation/7-Cache_Eviction/README.md) |
+| 8 | Graceful shutdown | Signals; shutting down cleanly | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part8-Graceful_Shutdown) | [notes](Documentation/8-Graceful_Shutdown/README.md) |
+| 9 | Multithread Redis | Shared-nothing architecture; benchmarks | [branch](https://github.com/TimSing6584/Multithread-Redis/tree/Part9-Multithread_Redis) | [notes](Documentation/9-Multithread_Redis/README.md) |
 
-## What's next
+## G. What's next
 
-- Write all replies from one read in a single `write` (and/or set `TCP_NODELAY`) to close the pipelining gap.
-- Let an IO handler keep several commands in flight instead of waiting for each reply, so the cost of the channel handoff is overlapped.
+- Persistence with RDB snapshots: right now all data lives in memory and is lost when the server stops. Periodically saving a snapshot to disk, and loading it on startup, would fix that.
+- Faster pipelining: write all the replies from one read in a single `write` (and set `TCP_NODELAY`), instead of one `write` per reply.
+- Authentication: right now anyone can connect and do anything. Add a password and check it before executing commands.
+
+    ...
