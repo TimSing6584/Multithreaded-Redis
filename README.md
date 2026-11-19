@@ -63,7 +63,7 @@ block-beta
     classDef read fill:#f8cecc,stroke:#b85450,color:#000
     classDef exec fill:#e1d5e7,stroke:#9673a6,color:#000
     classDef resp fill:#fff2cc,stroke:#d6b656,color:#000
-    classDef label fill:none,stroke:none
+    classDef label fill:none,stroke:none,color:#777
     class W wait
     class R read
     class E exec
@@ -135,10 +135,10 @@ flowchart LR
     IO3 -- cmd --> W2
     IO3 -- cmd --> W4
 
-    classDef client fill:#fff,stroke:#333
-    classDef listener fill:#d5e8d4,stroke:#82b366
-    classDef io fill:#dae8fc,stroke:#6c8ebf
-    classDef worker fill:#fff2cc,stroke:#d6b656
+    classDef client fill:#fff,stroke:#333,color:#000
+    classDef listener fill:#d5e8d4,stroke:#82b366,color:#000
+    classDef io fill:#dae8fc,stroke:#6c8ebf,color:#000
+    classDef worker fill:#fff2cc,stroke:#d6b656,color:#000
     class C1,C2,C3 client
     class L listener
     class IO1,IO2,IO3 io
@@ -168,7 +168,7 @@ Redis-k02/
 │       ├── single_thread/    # the event-loop engine
 │       └── multithread/      # listener + IO handlers + workers
 ├── io_multiplexing/          # i/o multiplexing wrapper
-├── benchmark/                # run.sh and its latest result.md
+├── benchmark/                # run.sh + result.md (server); eviction/ + eviction_result.md (eviction policies)
 ├── Documentation/            # my notes for every part, 1 to 9
 ├── go.mod
 └── README.md
@@ -196,6 +196,8 @@ OK
 ```
 
 ## E. Benchmark
+
+### 1. Single-thread vs multithread
 
 `redis-benchmark` on a laptop: Intel i5-1135G7 (4 cores / 8 threads), WSL2. The comparison is single-thread vs multithread. Real Redis 7.0.15 is only a reference point for checking the setup, so it doesn't count toward the winner.
 
@@ -228,6 +230,27 @@ Pipelining latency is left out because redis-benchmark only times each 16-comman
 - **Throughput is even with a hot key and with pipelining.** With a hot key every command goes to the same worker; with pipelining both engines are limited by the same reply-writing code. With a hot key, multithread still has the lower latency, because reading and parsing stay parallel across IO handlers.
 
 This is one run on a laptop, so the numbers are noisy. The full tables with latencies, and how to rerun them, are in [benchmark/result.md](benchmark/result.md).
+
+### 2. Cache eviction policies
+
+The cache holds a fixed number of keys. Requests follow a Zipfian distribution (alpha = 0.99) over 1,000,000 keys: a few keys get most of the requests, like real cache traffic. Each request GETs a key, and on a miss SETs it. The benchmark calls the keyspace (`core.Store`) directly, so it measures only the eviction policy, not the network. Every policy replays the same 7,000,000-request trace, and the first 2,000,000 requests only warm the cache up.
+
++) **Hit ratio (higher is better)**
+
+| Cache size (% of keys) | Random | LRU | Approx LRU |
+|---|---:|---:|---:|
+| 1% | 51.10% | 56.65% | 56.45% |
+| 5% | 65.32% | 70.38% | 70.18% |
+| 10% | 71.95% | 76.66% | 76.46% |
+| 25% | 81.85% | 85.48% | 85.30% |
+
++) **Memory per key (lower is better):** LRU 175.5 bytes, approx LRU 87.8 bytes, random 87.8 bytes.
+
+- **Approx LRU is within 0.2 pp of exact LRU at every cache size, with half the memory per key.** Exact LRU keeps a linked list node and an index map entry for every key. Approx LRU only keeps an 8-byte access stamp per key, plus one pool of 16 candidates.
+- **Both LRU variants beat random eviction by 3.5 to 5.6 pp, i.e. 11% to 20% fewer misses.** The pp gain is largest with a small cache. The relative cut in misses is largest with a big one.
+- With uniform traffic, every policy gets cache size / keyspace, as it should. This checks the benchmark itself.
+
+The full tables are in [benchmark/eviction_result.md](benchmark/eviction_result.md). They also cover the uniform workload and the hit ratio of an ideal cache that always holds the hottest keys. To rerun (any OS, about 8 minutes): `go run ./benchmark/eviction`.
 
 ## F. The journey
 
