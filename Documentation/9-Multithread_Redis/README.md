@@ -70,10 +70,10 @@ flowchart LR
     IO3 -- cmd --> W2
     IO3 -- cmd --> W4
 
-    classDef client fill:#fff,stroke:#333
-    classDef listener fill:#d5e8d4,stroke:#82b366
-    classDef io fill:#dae8fc,stroke:#6c8ebf
-    classDef worker fill:#fff2cc,stroke:#d6b656
+    classDef client fill:#fff,stroke:#333,color:#000
+    classDef listener fill:#d5e8d4,stroke:#82b366,color:#000
+    classDef io fill:#dae8fc,stroke:#6c8ebf,color:#000
+    classDef worker fill:#fff2cc,stroke:#d6b656,color:#000
     class C1,C2,C3 client
     class L listener
     class IO1,IO2,IO3 io
@@ -163,9 +163,9 @@ block-beta
     W -- "result" --> RC
     RC --> IO
 
-    classDef io fill:#dae8fc,stroke:#6c8ebf
-    classDef worker fill:#fff2cc,stroke:#d6b656
-    classDef ch fill:#e0e0e0,stroke:#666
+    classDef io fill:#dae8fc,stroke:#6c8ebf,color:#000
+    classDef worker fill:#fff2cc,stroke:#d6b656,color:#000
+    classDef ch fill:#e0e0e0,stroke:#666,color:#000
     class IO io
     class W worker
     class TC,RC ch
