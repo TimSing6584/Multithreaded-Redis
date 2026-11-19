@@ -63,7 +63,7 @@ block-beta
     classDef read fill:#f8cecc,stroke:#b85450,color:#000
     classDef exec fill:#e1d5e7,stroke:#9673a6,color:#000
     classDef resp fill:#fff2cc,stroke:#d6b656,color:#000
-    classDef label fill:none,stroke:none
+    classDef label fill:none,stroke:none,color:#777
     class W wait
     class R read
     class E exec
@@ -135,10 +135,10 @@ flowchart LR
     IO3 -- cmd --> W2
     IO3 -- cmd --> W4
 
-    classDef client fill:#fff,stroke:#333
-    classDef listener fill:#d5e8d4,stroke:#82b366
-    classDef io fill:#dae8fc,stroke:#6c8ebf
-    classDef worker fill:#fff2cc,stroke:#d6b656
+    classDef client fill:#fff,stroke:#333,color:#000
+    classDef listener fill:#d5e8d4,stroke:#82b366,color:#000
+    classDef io fill:#dae8fc,stroke:#6c8ebf,color:#000
+    classDef worker fill:#fff2cc,stroke:#d6b656,color:#000
     class C1,C2,C3 client
     class L listener
     class IO1,IO2,IO3 io
