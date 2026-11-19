@@ -1,4 +1,4 @@
-# Building single-thread and multithreaded Redis server from scratch in Go
+# Building single-thread and multithreaded Redis-compatible server
 
 I first built a single-thread Redis server whose I/O model is **I/O multiplexing** (`epoll`), the same model real Redis uses. A server like this is I/O-bound: most of its time goes into reading from and writing to sockets. That made me curious what happens if I add more threads to the I/O layer, so I built **both versions**. You pick one when the server starts.
 
