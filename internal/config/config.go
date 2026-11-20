@@ -49,7 +49,7 @@ const (
 // Don't switch Policy at runtime: the LRU list is only maintained under PolicyLRU,
 // so it would be out of sync with the store.
 var (
-	MaxKeys = 10000000
+	MaxKeys = 1000000
 	Policy  = PolicyApproxLRU
 )
 
