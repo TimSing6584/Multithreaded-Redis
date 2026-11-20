@@ -1,8 +1,13 @@
-# Building single-thread and multithreaded Redis-compatible server
+#  Single-thread and Multithreaded Redis-compatible server
 
-I first built a single-thread Redis server whose I/O model is **I/O multiplexing** (`epoll`), the same model real Redis uses. A server like this is I/O-bound: most of its time goes into reading from and writing to sockets. That made me curious what happens if I add more threads to the I/O layer, so I built **both versions**. You pick one when the server starts.
+A Redis-compatible server built from scratch in Go, with **two versions** you choose at startup:
+
+- **Single-thread:** one `epoll` event loop handles every connection and command. This is the same model real Redis uses.
+- **Multithread:** I/O threads handle client connections and pass commands to worker threads, each owning its own slice of the data (shared-nothing), so the work spreads across CPU cores.
 
 Both speak RESP, the Redis protocol, so `redis-cli` and `redis-benchmark` work against them unchanged.
+
+Since a server like this spends most of its time on I/O rather than computation, I built both to find out when adding threads actually helps. See the results in [Benchmark](#e-benchmark).
 
 ## A. What I built
 
@@ -10,7 +15,7 @@ Both speak RESP, the Redis protocol, so `redis-cli` and `redis-benchmark` work a
 |---|---|
 | Basic commands | `PING`, `SET` (with `EX`), `GET`, `DEL`, `EXISTS`, `TTL`, `PTTL`, `EXPIRE` |
 | Simple set | `SADD`, `SREM`, `SISMEMBER`, `SMEMBERS` |
-| Sorted set (B+ tree) | `ZADD`, `ZREM`, `ZSCORE`, `ZRANK` |
+| Sorted set (using B+ tree) | `ZADD`, `ZREM`, `ZSCORE`, `ZRANK` |
 | Count-min Sketch | `CMS.INITBYDIM`, `CMS.INITBYPROB`, `CMS.INCRBY`, `CMS.QUERY`, `CMS.INFO` |
 | Bloom filter | `BF.RESERVE`, `BF.ADD`, `BF.MADD`, `BF.EXISTS`, `BF.MEXISTS`, `BF.INFO` |
 | Key expiry | Lazy + active deletion |
@@ -21,6 +26,13 @@ Both speak RESP, the Redis protocol, so `redis-cli` and `redis-benchmark` work a
 ## B. Architecture
 
 ### 1. Single-thread
+
+One thread runs a single loop. `epoll` watches the listener and every client connection, and `Wait()` blocks until one of them is ready:
+
+- **Listener ready:** a new client is connecting. Accept it and add it to `epoll`'s watch list.
+- **Connection readable:** a command has arrived. Read and parse it, execute it, write the reply, then go back to `Wait()`.
+
+`Wait()` also has a timeout, so the loop wakes up regularly to delete expired keys even when no client is active.
 
 ```mermaid
 flowchart LR
@@ -39,41 +51,9 @@ flowchart LR
     class P resp
 ```
 
-One thread does everything. `epoll` watches the listener and every client connection, and `Wait()` blocks until one of them is ready:
-- The listener is ready: a new client is connecting. Accept it and add the connection to `epoll`'s watch list.
-- A connection is readable: a command has arrived. Read and parse it, execute it, write the reply, and go back to `Wait()`.
-
-`Wait()` also has a timeout, so the loop wakes up regularly to delete expired keys even when no client is active.
-
-So the whole server is one loop:
-
-```mermaid
-block-beta
-    columns 3
-    space W["ioMultiplexer.Wait()"] space
-    P["response"] T["1 thread"] R["readCommand"]
-    space E["execute"] space
-
-    W --> R
-    R --> E
-    E --> P
-    P --> W
-
-    classDef wait fill:#d5e8d4,stroke:#82b366,color:#000
-    classDef read fill:#f8cecc,stroke:#b85450,color:#000
-    classDef exec fill:#e1d5e7,stroke:#9673a6,color:#000
-    classDef resp fill:#fff2cc,stroke:#d6b656,color:#000
-    classDef label fill:none,stroke:none,color:#777
-    class W wait
-    class R read
-    class E exec
-    class P resp
-    class T label
-```
-
 ### 2. Multithreaded
 
-One loop can only use one CPU core. Since the work is mostly I/O, I added more threads to the I/O layer: copy the single-thread loop several times, so many clients are served in parallel. The open question is what to do with the data. There are two models:
+One loop can only use one CPU core. To serve many clients in parallel, I run several copies of the I/O loop on separate threads. The open question is **what to do with the data?** There are two models:
 
 #### a. Shared-memory
 
@@ -84,7 +64,7 @@ flowchart LR
     T3["Thread 3"] --> D
 ```
 
-All threads read and write the same data, so every access needs a lock (a mutex). Only one thread can hold the lock at a time, and the others wait. With 3 threads, the CPU keeps switching between them, but only one is doing real work at any moment. Adding threads doesn't make data access faster; it just adds waiting and context switching.
+All threads read and write the same data, so every access needs a lock. Threads can still read and parse in parallel, but data access happens one thread at a time, so adding threads mostly adds waiting.
 
 #### b. Shared-nothing
 
@@ -95,9 +75,9 @@ flowchart LR
     T3["Thread 3"] --> P3[("Partition 3")]
 ```
 
-Each thread owns one partition of the data and never touches the others, so there are no locks and no thread waits for another. The price is complexity: every command must be sent to the thread that owns its key, and commands that touch several keys need extra work.
+Each thread owns one partition of the data and never touches the others, so no locks are needed. The price is complexity: every command must be routed to the thread that owns its key, and multi-key commands need extra work.
 
-**This project uses shared-nothing.** I accept the extra complexity to get real parallelism.
+**This project uses shared-nothing**, trading extra complexity for real parallelism.
 
 #### The multithreaded architecture
 
@@ -145,18 +125,18 @@ flowchart LR
     class W1,W2,W3,W4 worker
 ```
 
-- **Listener:** accepts new connections and hands each one to an IO handler, round robin.
-- **IO handlers:** each runs its own `epoll` loop over its connections. It reads and parses commands, sends each one to the worker that owns its key (`hash(key) % M`), and writes the reply back to the client.
-- **Workers:** each owns one partition: its own keyspace, expiry and eviction state, so it needs no locks. It executes its commands one at a time and also deletes expired keys in its partition.
-- **Channels:** IO handlers and workers only talk through Go channels. Each worker has a task channel, and each IO handler has a reply channel. A task carries the command plus the reply channel to answer on.
-- **Special cases:** a multi-key `DEL` / `EXISTS` is split per worker and the counts are added up. Keyless commands such as `PING` go to any worker.
+- **Listener:** accepts new connections and assigns each to an IO handler, round robin.
+- **IO handlers:** each runs its own `epoll` loop, parses commands, routes each to the worker that owns its key (`hash(key) % numWorkers`), and writes replies back to clients.
+- **Workers:** each owns one partition (keyspace, expiry and eviction state), executes commands one at a time, and deletes its own expired keys. No locks needed.
+- **Channels:** IO handlers and workers communicate only through Go channels. A task carries the command and the IO handler's reply channel.
+- **Special cases:** multi-key `DEL` / `EXISTS` are split per worker and the counts summed. Keyless commands like `PING` go to any worker.
 
 More details are in [Documentation/9-Multithread_Redis](Documentation/9-Multithread_Redis/README.md).
 
 ## C. Project layout
 
 ```
-Redis-k02/
+Multithreaded_Redis/
 ├── main.go                   # entry point: asks for single-thread or multithread, then starts it
 ├── internal/
 │   ├── resp/                 # RESP parser and encoder
@@ -197,37 +177,56 @@ OK
 
 ## E. Benchmark
 
-`redis-benchmark` on a laptop: Intel i5-1135G7 (4 cores / 8 threads), WSL2. The comparison is single-thread vs multithread. Real Redis 7.0.15 is only a reference point for checking the setup, so it doesn't count toward the winner.
+### 1. Server performance: single-thread vs multithread
+
+`redis-benchmark` on a laptop: Intel i5-1135G7 (4 cores / 8 threads), WSL2. The comparison is single-thread vs multithread. 
 
 +) **Throughput (requests/sec, higher is better)**
 
-| Test | Single-thread | Multithread | Real Redis (reference) | Winner |
+| Test | Single-thread | Multithread | Real Redis (reference only) | Winner |
 |---|---:|---:|---:|---|
 | 1 client (SET / GET) | 12.6k / 15.8k | 15.3k / 10.9k | 16k / 17k | Even |
 | 50 clients (SET / GET) | 143k / 125k | 56k / 54k | 194k / 140k | Single-thread |
 | 200 clients, 4 client threads (SET / GET) | 55k / 42k | 68k / 82k | 120k / 61k | Multithread |
-| Hot key, all clients on 1 key (SET / GET) | 56k / 35k | 50k / 45k | 56k / 55k | Even |
-| Pipelining, `-P 16` (SET / GET) | 19k / 18k | 18k / 18k | 98k / 198k | Even |
 | Heavy command on ~400-member sets (SMEMBERS) | 3.6k | 5.4k | 4.3k | Multithread |
 
 +) **Latency (p50 in ms, lower is better)**
 
-| Test | Single-thread | Multithread | Real Redis (reference) | Winner |
+| Test | Single-thread | Multithread | Real Redis (reference only) | Winner |
 |---|---:|---:|---:|---|
 | 1 client (SET / GET) | 0.063 / 0.055 | 0.071 / 0.079 | 0.055 / 0.055 | Single-thread |
 | 50 clients (SET / GET) | 0.183 / 0.191 | 0.495 / 0.479 | 0.183 / 0.175 | Single-thread |
 | 200 clients, 4 client threads (SET / GET) | 3.295 / 3.439 | 1.199 / 1.231 | 1.831 / 2.679 | Multithread |
-| Hot key, all clients on 1 key (SET / GET) | 2.535 / 3.199 | 1.199 / 1.367 | 2.607 / 2.703 | Multithread |
-| Pipelining, `-P 16` (SET / GET) | n/a | n/a | n/a | n/a |
 | Heavy command on ~400-member sets (SMEMBERS) | 55.967 | 36.127 | 44.767 | Multithread |
 
-Pipelining latency is left out because redis-benchmark only times each 16-command batch until its first reply, so those numbers don't mean much.
-
 - **Single-thread wins under light load (1–50 clients).** Each command is handled start to finish on one thread, while multithread pays for two hand-offs between threads per command. So single-thread has the lower latency, and at 50 clients much higher throughput.
-- **Multithread wins with many concurrent clients and CPU-heavy commands.** Reading, parsing and executing are spread across CPU cores, so it wins on both throughput and latency.
-- **Throughput is even with a hot key and with pipelining.** With a hot key every command goes to the same worker; with pipelining both engines are limited by the same reply-writing code. With a hot key, multithread still has the lower latency, because reading and parsing stay parallel across IO handlers.
+- **Multithread wins with many concurrent clients and heavy commands.** Reading, parsing and executing are spread across CPU cores, so it wins on both throughput and latency.
+- Read more in [benchmark/throughput_result.md](benchmark/throughput_result.md).
 
-This is one run on a laptop, so the numbers are noisy. The full tables with latencies, and how to rerun them, are in [benchmark/result.md](benchmark/result.md).
+### 2. Cache eviction: random vs LRU vs approximated LRU
+
+Zipfian workload (alpha = 0.99): 5M requests over 1M keys, where a few hot keys get most of the requests.
+
++) **Hit ratio (higher is better)**
+
+| Cache size (% of keys) | Random | LRU | Approx LRU |
+|---|---:|---:|---:|
+| 1% | 51.00% | 56.65% | 56.45% |
+| 5% | 65.29% | 70.38% | 70.18% |
+| 10% | 71.97% | 76.66% | 76.46% |
+| 20% | 79.23% | 83.27% | 83.07% |
+
++) **Memory per key (lower is better)**
+
+| Policy | Heap per key (bytes) | vs Approx LRU |
+|---|---:|---:|
+| Random | 87.8 | same |
+| LRU | 175.5 | +87.6 bytes (2.00x) |
+| Approx LRU | 87.9 | same |
+
+- Approx LRU stays within 0.2 percentage points of exact LRU's hit ratio while using half the memory per key.
+
+- Read more in [benchmark/eviction_result.md](benchmark/eviction_result.md).
 
 ## F. The journey
 

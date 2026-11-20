@@ -197,14 +197,6 @@ run_test 'High concurrency: 200 clients' \
 	'2,000,000 SET, then 2,000,000 GET, from **200 clients** spread over 4 benchmark threads, on random keys out of 100,000.' \
 	-t set,get -n 2000000 -r 100000 -c 200 --threads 4
 
-run_test 'Hot key: 200 clients on 1 key' \
-	'1,000,000 SET, then 1,000,000 GET, from **200 clients** over 4 benchmark threads, all on **the same key** (no `-r`). In the multithread server every request goes to the same worker.' \
-	-t set,get -n 1000000 -c 200 --threads 4
-
-run_test 'Pipelining: 50 clients, 16 commands per round trip' \
-	'500,000 SET, then 500,000 GET, from **50 clients**, each sending **16 commands at once** (`-P 16`) before reading the replies, on random keys out of 100,000. redis-benchmark times each batch only until its first reply, so here compare throughput, not latency.' \
-	-t set,get -n 500000 -r 100000 -c 50 -P 16
-
 PREFILL=(-n 500000 -r 1000 -c 50 SADD set:__rand_int__ m:__rand_int__)
 run_test 'Heavy command: SMEMBERS on ~400-member sets' \
 	'Prefill: 500,000 SADD from 50 clients into 1,000 sets, with members picked at random out of 1,000, so each set ends up with ~400 members. Then 200,000 SMEMBERS from **200 clients** over 4 benchmark threads, on random sets. Each reply is ~8 KB, so every request costs the server real CPU.' \
